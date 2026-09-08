@@ -71,10 +71,33 @@ function upsertItem(item) {
   }
 }
 
+// Schreibt nur eine neue Zeile, wenn sich gegenüber dem letzten Snapshot
+// etwas geändert hat (Preis, Verfügbarkeit oder Preis-Tiers). Bei stündlichem
+// Scan wäre sonst nach kurzer Zeit fast die gesamte Tabelle reine
+// "nichts geändert"-Zeilen -- so bleibt die Preis-Historie automatisch ein
+// echtes Änderungs-Log ("upgraded", wenn sich der Preis ändert) statt eines
+// dichten Zeitreihen-Dumps, und ist direkt als Chart-Datenpunkte nutzbar.
 function addSnapshot(itemId, price, availability, currentPrice = null, referencePrice = null) {
-  db.prepare(
-    `INSERT INTO snapshots (item_id, price, availability, current_price, reference_price, checked_at) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(itemId, price, availability, currentPrice, referencePrice, new Date().toISOString());
+  const last = db
+    .prepare(
+      `SELECT price, availability, current_price, reference_price FROM snapshots
+       WHERE item_id = ? ORDER BY checked_at DESC LIMIT 1`
+    )
+    .get(itemId);
+
+  const changed =
+    !last ||
+    last.price !== price ||
+    last.availability !== availability ||
+    last.current_price !== currentPrice ||
+    last.reference_price !== referencePrice;
+
+  if (changed) {
+    db.prepare(
+      `INSERT INTO snapshots (item_id, price, availability, current_price, reference_price, checked_at) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(itemId, price, availability, currentPrice, referencePrice, new Date().toISOString());
+  }
+  return changed;
 }
 
 function setMeta(key, value) {
@@ -101,9 +124,9 @@ function getItemsWithSaleInfo() {
      WHERE item_id = ? ORDER BY checked_at DESC LIMIT 1`
   );
   const historyStmt = db.prepare(
-    `SELECT price, availability FROM snapshots
+    `SELECT price, availability, checked_at FROM snapshots
      WHERE item_id = ? AND checked_at >= datetime('now', '-30 days')
-     ORDER BY checked_at DESC`
+     ORDER BY checked_at ASC`
   );
 
   return items.map((item) => {
@@ -119,8 +142,12 @@ function getItemsWithSaleInfo() {
     const hasTierDiscount =
       latest.current_price != null && latest.reference_price != null && latest.current_price < latest.reference_price;
 
-    const history = historyStmt.all(item.id);
-    const priorHistory = history.slice(1); // ohne den aktuellsten Snapshot
+    // Ab jetzt speichert addSnapshot nur noch Änderungs-Ereignisse, keine
+    // dichte Zeitreihe mehr -- eine Zeile kann also tagelang gültig gewesen
+    // sein. "Häufigster Preis" muss deshalb über die tatsächliche Dauer
+    // jedes Preises gewichtet werden, nicht über die Zeilenanzahl.
+    const history = historyStmt.all(item.id); // aufsteigend sortiert
+    const priorHistory = history.slice(0, -1); // ohne das aktuell laufende Segment
 
     let onSale = false;
     let discountPct = null;
@@ -133,19 +160,22 @@ function getItemsWithSaleInfo() {
       discountPct = Math.round((1 - latest.current_price / latest.reference_price) * 100);
       saleType = "listed_discount";
     } else {
-      // Fallback: eigene Preis-Historie -- häufigster ("mode") Preis der
-      // letzten 30 Tage, den aktuellsten Snapshot ausgenommen. Fängt Fälle
-      // ab, wo RSI selbst keinen zweiten Preis-Tier zeigt, der Preis aber
-      // trotzdem gegenüber der eigenen Beobachtung gefallen ist.
+      // Fallback: dauer-gewichteter häufigster Preis der letzten 30 Tage,
+      // das aktuell laufende Segment ausgenommen. Fängt Fälle ab, wo RSI
+      // selbst keinen zweiten Preis-Tier zeigt, der Preis aber trotzdem
+      // gegenüber der eigenen Beobachtung gefallen ist.
       if (priorHistory.length > 0) {
-        const counts = new Map();
-        for (const h of priorHistory) {
-          if (h.price == null) continue;
-          counts.set(h.price, (counts.get(h.price) || 0) + 1);
+        const durationByPrice = new Map();
+        for (let i = 0; i < priorHistory.length; i++) {
+          const row = priorHistory[i];
+          if (row.price == null) continue;
+          const start = new Date(row.checked_at).getTime();
+          const end = new Date(history[i + 1].checked_at).getTime();
+          durationByPrice.set(row.price, (durationByPrice.get(row.price) || 0) + Math.max(0, end - start));
         }
         let best = null;
-        for (const [price, count] of counts) {
-          if (!best || count > best.count) best = { price, count };
+        for (const [price, duration] of durationByPrice) {
+          if (!best || duration > best.duration) best = { price, duration };
         }
         if (best) baselinePrice = best.price;
       }
@@ -155,7 +185,7 @@ function getItemsWithSaleInfo() {
     }
 
     // "neu verfügbar": aktuell InStock, war aber in den letzten 14 Tagen
-    // (den aktuellsten Snapshot ausgenommen) durchgehend OutOfStock.
+    // (das aktuell laufende Segment ausgenommen) durchgehend OutOfStock.
     const recentPrior = priorHistory.filter((h) => h.availability != null);
     const wasUnavailable = recentPrior.length > 0 && recentPrior.every((h) => h.availability === "OutOfStock");
     const newlyAvailable = latest.availability === "InStock" && wasUnavailable;
@@ -212,6 +242,88 @@ function getShipsInDevelopment() {
   return db.prepare("SELECT * FROM ships_in_development ORDER BY name").all();
 }
 
+// Vollständige Änderungs-Historie eines Items -- dank Dedupe in addSnapshot
+// ist jede Zeile bereits ein echtes Preis-/Verfügbarkeits-Änderungsereignis,
+// keine weitere Verdichtung nötig. Berechnet zusätzlich ein paar Kennzahlen
+// fürs Detail-Panel im Frontend.
+function getItemHistory(itemId) {
+  const item = db.prepare("SELECT * FROM items WHERE id = ?").get(itemId);
+  if (!item) return null;
+
+  const rows = db
+    .prepare(
+      `SELECT price, availability, current_price, reference_price, checked_at FROM snapshots
+       WHERE item_id = ? ORDER BY checked_at ASC`
+    )
+    .all(itemId);
+
+  const events = rows.map((r) => {
+    const hasTier = r.current_price != null && r.reference_price != null && r.current_price < r.reference_price;
+    return {
+      price: hasTier ? r.current_price : r.price,
+      referencePrice: hasTier ? r.reference_price : null,
+      availability: r.availability,
+      at: r.checked_at,
+    };
+  });
+
+  const prices = events.map((e) => e.price).filter((p) => p != null);
+  const stats =
+    prices.length > 0
+      ? {
+          allTimeLow: Math.min(...prices),
+          allTimeHigh: Math.max(...prices),
+          currentPrice: events[events.length - 1].price,
+          trackedSince: events[0].at,
+          priceChangeCount: Math.max(0, events.length - 1),
+          currentSince: events[events.length - 1].at,
+        }
+      : null;
+
+  return { item, events, stats };
+}
+
+// Aggregierte Kennzahlen über den gesamten getrackten Katalog, fürs
+// Statistik-Panel im Frontend.
+function getStats() {
+  const items = getItemsWithSaleInfo().filter((i) => i.price != null);
+  const totalChanges = db.prepare("SELECT COUNT(*) AS c FROM snapshots").get().c;
+  const totalAnnouncements = db.prepare("SELECT COUNT(*) AS c FROM announcements").get().c;
+
+  if (items.length === 0) {
+    return {
+      totalItems: 0,
+      onSaleCount: 0,
+      totalPriceChangesTracked: totalChanges,
+      totalAnnouncementsTracked: totalAnnouncements,
+    };
+  }
+
+  const onSaleItems = items.filter((i) => i.onSale);
+  const cheapest = items.reduce((a, b) => (a.price <= b.price ? a : b));
+  const priciest = items.reduce((a, b) => (a.price >= b.price ? a : b));
+  const biggestDiscount = onSaleItems.reduce(
+    (a, b) => (!a || (b.discountPct || 0) > (a.discountPct || 0) ? b : a),
+    null
+  );
+  const totalCatalogValue = items.reduce((sum, i) => sum + i.price, 0);
+  const avgPrice = totalCatalogValue / items.length;
+
+  return {
+    totalItems: items.length,
+    onSaleCount: onSaleItems.length,
+    totalPriceChangesTracked: totalChanges,
+    totalAnnouncementsTracked: totalAnnouncements,
+    totalCatalogValue,
+    avgPrice,
+    cheapest: { name: cheapest.name, price: cheapest.price },
+    priciest: { name: priciest.name, price: priciest.price },
+    biggestDiscount: biggestDiscount
+      ? { name: biggestDiscount.name, discountPct: biggestDiscount.discountPct, price: biggestDiscount.price }
+      : null,
+  };
+}
+
 module.exports = {
   db,
   upsertItem,
@@ -223,4 +335,6 @@ module.exports = {
   getRecentAnnouncements,
   replaceShipsInDevelopment,
   getShipsInDevelopment,
+  getItemHistory,
+  getStats,
 };

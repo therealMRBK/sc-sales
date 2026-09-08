@@ -1,6 +1,6 @@
 const path = require("path");
 const express = require("express");
-const { getItemsWithSaleInfo, getMeta, getRecentAnnouncements, getShipsInDevelopment } = require("./db");
+const { getItemsWithSaleInfo, getMeta, getRecentAnnouncements, getShipsInDevelopment, getItemHistory, getStats } = require("./db");
 const { runScan, scanCommLink, scanShipsInDevelopment } = require("./scanner");
 const RECURRING_EVENTS = require("./events");
 
@@ -40,6 +40,16 @@ app.get("/api/calendar", (req, res) => {
     announcements: getRecentAnnouncements(30),
     shipsInDevelopment: getShipsInDevelopment(),
   });
+});
+
+app.get("/api/items/:id/history", (req, res) => {
+  const result = getItemHistory(req.params.id);
+  if (!result) return res.status(404).json({ error: "unknown item" });
+  res.json(result);
+});
+
+app.get("/api/stats", (req, res) => {
+  res.json(getStats());
 });
 
 app.listen(PORT, () => {

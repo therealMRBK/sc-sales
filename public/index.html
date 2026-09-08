@@ -4,110 +4,207 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Star Citizen Store-Sales</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Electrolize&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
 <style>
+  /* Farb-/Schrift-Palette 1:1 aus RSIs eigenem CSS extrahiert
+     (robertsspaceindustries.com/cache/en/rsi-css.css) -- Google-Fonts-Familien
+     Orbitron/Electrolize/Share+Tech+Mono lädt RSI selbst über dieselbe
+     /rsi/assets/fonts.css-Route. */
   :root {
-    --bg: #0b0e14;
-    --card: #141a24;
-    --border: #23303f;
-    --text: #e6ecf3;
-    --muted: #8b98a9;
-    --accent: #ffb020;
-    --sale: #2ecc71;
+    --bg: #000b18;
+    --bg-deep: #000;
+    --panel: #051220;
+    --panel-2: #08182a;
+    --cyan: #43edf8;
+    --cyan-bright: #00e7ff;
+    --cyan-dim: #16749b;
+    --border: #0a5688;
+    --border-dim: #023867;
+    --amber: #e08400;
+    --amber-bright: #ffae00;
+    --text: #dcecfa;
+    --text-bright: #fffef1;
+    --muted: #5a7a93;
+    --danger: #ff5d73;
+    --font-head: "Orbitron", sans-serif;
+    --font-body: "Electrolize", sans-serif;
+    --font-mono: "Share Tech Mono", monospace;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     background: var(--bg);
+    background-image: radial-gradient(ellipse at top, #051a2e 0%, var(--bg) 60%);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-body);
   }
+  ::selection { background: var(--cyan); color: #000; }
+
+  .clip {
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+  }
+
   header {
-    padding: 20px 24px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 22px 28px 16px;
+    border-bottom: 1px solid var(--border-dim);
+    background: linear-gradient(180deg, rgba(10, 86, 136, 0.12), transparent);
   }
-  header h1 { margin: 0 0 4px; font-size: 22px; }
-  header p { margin: 0; color: var(--muted); font-size: 13px; }
-  #status { margin-top: 8px; font-size: 12px; color: var(--muted); }
-  #tabs { display: flex; gap: 8px; padding: 12px 24px 0; }
+  header h1 {
+    margin: 0 0 6px;
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-bright);
+    text-shadow: 0 0 12px rgba(67, 237, 248, 0.5);
+  }
+  header h1 span { color: var(--cyan); }
+  header p { margin: 0; color: var(--muted); font-size: 12px; letter-spacing: 0.5px; }
+  #status { margin-top: 10px; font-size: 11px; color: var(--cyan-dim); font-family: var(--font-mono); letter-spacing: 0.5px; }
+
+  #tabs { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border-dim); }
   #tabs button {
-    background: none; border: none; color: var(--muted); font-size: 14px;
-    padding: 8px 4px; cursor: pointer; border-bottom: 2px solid transparent;
+    background: none; border: none; color: var(--muted); font-family: var(--font-head);
+    font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+    padding: 14px 16px 12px; cursor: pointer; border-bottom: 2px solid transparent;
   }
-  #tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
-  #filters {
-    display: flex; gap: 8px; padding: 12px 24px; flex-wrap: wrap;
+  #tabs button.active { color: var(--cyan); border-bottom-color: var(--cyan); text-shadow: 0 0 8px rgba(67,237,248,0.6); }
+  #tabs button:hover { color: var(--text-bright); }
+
+  .toolbar {
+    display: flex; gap: 10px; padding: 16px 28px; flex-wrap: wrap; align-items: center;
   }
-  #filters button {
-    background: var(--card); border: 1px solid var(--border); color: var(--text);
-    padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  .toolbar input[type="text"] {
+    background: var(--panel); border: 1px solid var(--border-dim); color: var(--text);
+    padding: 8px 12px; font-family: var(--font-body); font-size: 13px; min-width: 200px;
   }
-  #filters button.active { border-color: var(--accent); color: var(--accent); }
+  .toolbar input[type="text"]:focus { outline: none; border-color: var(--cyan-dim); }
+  .toolbar select {
+    background: var(--panel); border: 1px solid var(--border-dim); color: var(--text);
+    padding: 8px 10px; font-family: var(--font-body); font-size: 12px;
+  }
+  .pillbtn {
+    background: var(--panel); border: 1px solid var(--border-dim); color: var(--muted);
+    padding: 7px 16px; cursor: pointer; font-family: var(--font-body); font-size: 12px;
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .pillbtn.active { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 10px rgba(67,237,248,0.25) inset; }
+
   #grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 16px;
-    padding: 8px 24px 32px;
+    padding: 4px 28px 40px;
   }
   .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border-dim);
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
-  .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; }
-  .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
-  .card .name { font-weight: 600; font-size: 14px; }
-  .card .manufacturer { height: 16px; opacity: 0.7; }
-  .card .manufacturer img { height: 100%; filter: grayscale(1) brightness(1.6); }
+  .card:hover { border-color: var(--cyan-dim); box-shadow: 0 0 16px rgba(67,237,248,0.15); }
+  .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; display: block; }
+  .card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 7px; }
+  .card .name { font-family: var(--font-head); font-weight: 700; font-size: 13px; letter-spacing: 0.5px; color: var(--text-bright); }
+  .card .manufacturer { height: 15px; opacity: 0.65; }
+  .card .manufacturer img { height: 100%; filter: grayscale(1) brightness(2.2); }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
   .badge {
-    font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 3px 8px;
+    letter-spacing: 1px; text-transform: uppercase; border: 1px solid transparent;
   }
-  .badge.sale { background: var(--sale); color: #06210f; }
-  .badge.newly { background: var(--accent); color: #2a1900; }
-  .badge.major { background: #ff5d73; color: #2a0008; }
-  .badge.minor { background: var(--border); color: var(--muted); }
-  .price-row { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
-  .price { font-size: 16px; font-weight: 700; }
-  .price.on-sale { color: var(--sale); }
+  .badge.sale { background: rgba(224,132,0,0.15); border-color: var(--amber); color: var(--amber-bright); }
+  .badge.newly { background: rgba(67,237,248,0.12); border-color: var(--cyan-dim); color: var(--cyan); }
+  .badge.major { background: rgba(255,93,115,0.15); border-color: var(--danger); color: var(--danger); }
+  .badge.minor { background: rgba(90,122,147,0.15); border-color: var(--border-dim); color: var(--muted); }
+  .price-row { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; font-family: var(--font-mono); }
+  .price { font-size: 17px; font-weight: 700; color: var(--text-bright); }
+  .price.on-sale { color: var(--amber-bright); }
   .baseline { font-size: 12px; color: var(--muted); text-decoration: line-through; }
-  .unavailable { font-size: 11px; color: var(--muted); }
-  a.card-link { color: inherit; text-decoration: none; }
-  #empty { padding: 40px 24px; color: var(--muted); text-align: center; }
+  .unavailable { font-size: 11px; color: var(--muted); font-style: italic; }
+  #empty { padding: 60px 28px; color: var(--muted); text-align: center; font-family: var(--font-body); }
 
-  #calendar { padding: 8px 24px 40px; display: none; }
-  #calendar.visible { display: block; }
-  #grid.hidden, #filters.hidden, #empty.hidden-tab { display: none; }
-  .cal-section h2 { font-size: 15px; margin: 24px 0 10px; color: var(--text); }
-  .cal-section:first-child h2 { margin-top: 8px; }
+  #calendar, #stats-view { padding: 8px 28px 40px; display: none; }
+  #calendar.visible, #stats-view.visible { display: block; }
+  #grid.hidden, .toolbar.hidden, #empty.hidden-tab { display: none; }
+
+  .cal-section h2, .stats-section h2 {
+    font-family: var(--font-head); font-size: 14px; letter-spacing: 2px; text-transform: uppercase;
+    margin: 26px 0 10px; color: var(--cyan); border-bottom: 1px solid var(--border-dim); padding-bottom: 8px;
+  }
+  .cal-section:first-child h2 { margin-top: 10px; }
   .cal-list { display: flex; flex-direction: column; gap: 8px; }
   .cal-item {
-    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;
+    background: var(--panel); border: 1px solid var(--border-dim);
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 5px;
   }
-  .cal-item .top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .cal-item .title { font-weight: 600; font-size: 14px; }
-  .cal-item .when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .cal-item .top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .cal-item .title { font-family: var(--font-head); font-weight: 700; font-size: 13px; color: var(--text-bright); }
+  .cal-item .when { font-size: 11px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; }
   .cal-item .note { font-size: 12px; color: var(--muted); }
-  .cal-item a { color: var(--accent); text-decoration: none; font-size: 12px; }
+  .cal-item a { color: var(--cyan); text-decoration: none; font-size: 12px; }
+  .cal-item a:hover { text-decoration: underline; }
   .cal-hint { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--border-dim); padding: 16px; }
+  .stat-card .label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .stat-card .value { font-family: var(--font-mono); font-size: 22px; color: var(--cyan); font-weight: 700; }
+  .stat-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Detail-Overlay */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,4,10,0.85); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  #overlay.visible { display: flex; }
+  #detail-panel {
+    background: var(--panel); border: 1px solid var(--cyan-dim); max-width: 640px; width: 100%;
+    max-height: 90vh; overflow-y: auto; box-shadow: 0 0 40px rgba(67,237,248,0.15);
+  }
+  #detail-panel img { width: 100%; aspect-ratio: 21/9; object-fit: cover; display: block; }
+  #detail-body { padding: 20px 24px 26px; }
+  #detail-body h2 { font-family: var(--font-head); font-size: 18px; letter-spacing: 1px; color: var(--text-bright); margin: 0 0 4px; }
+  #detail-body .close { float: right; background: none; border: 1px solid var(--border-dim); color: var(--muted); cursor: pointer; padding: 4px 10px; font-size: 12px; }
+  #detail-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 16px 0; }
+  #detail-stats .stat-card .value { font-size: 17px; }
+  #chart-wrap { margin: 16px 0; }
+  #chart-wrap svg { width: 100%; height: 160px; display: block; }
+  #history-list { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; max-height: 180px; overflow-y: auto; }
+  #history-list .row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border-dim); font-family: var(--font-mono); }
+  #history-list .row .p { color: var(--text); }
+  #history-list .row .t { color: var(--muted); }
+  .store-link { display: inline-block; margin-top: 14px; color: var(--cyan); font-size: 12px; text-decoration: none; letter-spacing: 1px; text-transform: uppercase; }
+  .store-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🚀 Star Citizen Store-Sales</h1>
+  <h1><span>&#9670;</span> Star Citizen — Store Sales</h1>
   <p>Beobachtet den RSI Pledge-Store und markiert Preissenkungen &amp; neu verfügbare Schiffe.</p>
   <div id="status">lädt…</div>
 </header>
 <div id="tabs">
   <button data-tab="sales" class="active">Sales</button>
-  <button data-tab="calendar">📅 Kalender</button>
+  <button data-tab="calendar">Kalender</button>
+  <button data-tab="stats">Statistiken</button>
 </div>
-<div id="filters">
-  <button data-filter="sale" class="active">Nur Sales</button>
-  <button data-filter="all">Alle Items</button>
+<div class="toolbar" id="toolbar">
+  <button class="pillbtn active" data-filter="sale">Nur Sales</button>
+  <button class="pillbtn" data-filter="all">Alle Items</button>
+  <input type="text" id="search" placeholder="Schiff suchen…" />
+  <select id="sort">
+    <option value="name">Name (A-Z)</option>
+    <option value="price_asc">Preis (aufsteigend)</option>
+    <option value="price_desc">Preis (absteigend)</option>
+    <option value="discount">Größter Rabatt</option>
+  </select>
 </div>
 <div id="grid"></div>
 <div id="empty" hidden>Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.</div>
@@ -130,10 +227,26 @@
   </div>
 </div>
 
+<div id="stats-view">
+  <div class="stats-section">
+    <h2>Flotte im Überblick</h2>
+    <div class="stat-grid" id="stat-grid"></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div id="detail-panel">
+    <div id="detail-body">lädt…</div>
+  </div>
+</div>
+
 <script>
   let lastScanAt = null;
   let filter = "sale";
+  let sortMode = "name";
+  let searchTerm = "";
   let activeTab = "sales";
+  let allItems = [];
 
   function fmtMoney(v) {
     if (v == null) return "–";
@@ -151,27 +264,53 @@
     return `vor ${Math.round(hours / 24)} Tagen`;
   }
 
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
   async function pollStatus() {
     try {
       const res = await fetch("/api/status");
       const status = await res.json();
       document.getElementById("status").textContent =
-        `Letzter Scan: ${fmtRelative(status.lastScanAt)}` +
-        (status.lastScanAt ? ` (${status.lastScanOk} ok${status.lastScanFailed ? ", " + status.lastScanFailed + " Fehler" : ""})` : "") +
-        ` · Intervall: alle ${status.scanIntervalMinutes} Min.`;
+        `LETZTER SCAN: ${fmtRelative(status.lastScanAt)}`.toUpperCase() +
+        (status.lastScanAt ? ` (${status.lastScanOk} OK${status.lastScanFailed ? ", " + status.lastScanFailed + " FEHLER" : ""})` : "") +
+        ` · INTERVALL: ${status.scanIntervalMinutes}MIN`;
       if (status.lastScanAt !== lastScanAt) {
         lastScanAt = status.lastScanAt;
         loadItems();
       }
     } catch (e) {
-      document.getElementById("status").textContent = "Status nicht erreichbar";
+      document.getElementById("status").textContent = "STATUS NICHT ERREICHBAR";
     }
   }
 
-  function render(items) {
+  function applyFilters(items) {
+    let result = filter === "sale" ? items.filter((i) => i.onSale || i.newlyAvailable) : items.slice();
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      result = result.filter((i) => i.name.toLowerCase().includes(q));
+    }
+    switch (sortMode) {
+      case "price_asc":
+        result.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+        break;
+      case "price_desc":
+        result.sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+        break;
+      case "discount":
+        result.sort((a, b) => (b.discountPct || 0) - (a.discountPct || 0));
+        break;
+      default:
+        result.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return result;
+  }
+
+  function render() {
     const grid = document.getElementById("grid");
     const empty = document.getElementById("empty");
-    const visible = filter === "sale" ? items.filter((i) => i.onSale || i.newlyAvailable) : items;
+    const visible = applyFilters(allItems);
 
     if (visible.length === 0) {
       grid.innerHTML = "";
@@ -190,27 +329,108 @@
           : `<span class="price">${fmtMoney(item.price)}</span>`;
         const unavailable = item.availability === "OutOfStock" ? `<div class="unavailable">aktuell nicht einzeln kaufbar</div>` : "";
         return `
-          <a class="card-link" href="${item.url}" target="_blank" rel="noopener">
-            <div class="card">
-              ${item.image ? `<img src="${item.image}" loading="lazy" alt="${item.name}" />` : ""}
-              <div class="body">
-                <div class="badges">${badges.join("")}</div>
-                <div class="name">${item.name}</div>
-                <div class="manufacturer">${item.manufacturer ? `<img src="${item.manufacturer}" alt="" />` : ""}</div>
-                <div class="price-row">${priceHtml}</div>
-                ${unavailable}
-              </div>
+          <div class="card" data-id="${item.id}">
+            ${item.image ? `<img src="${item.image}" loading="lazy" alt="${item.name}" />` : ""}
+            <div class="body">
+              <div class="badges">${badges.join("")}</div>
+              <div class="name">${item.name}</div>
+              <div class="manufacturer">${item.manufacturer ? `<img src="${item.manufacturer}" alt="" />` : ""}</div>
+              <div class="price-row">${priceHtml}</div>
+              ${unavailable}
             </div>
-          </a>`;
+          </div>`;
       })
       .join("");
+
+    grid.querySelectorAll(".card").forEach((card) => {
+      card.addEventListener("click", () => openDetail(card.dataset.id));
+    });
   }
 
   async function loadItems() {
     const res = await fetch("/api/items");
     const data = await res.json();
-    render(data.items);
+    allItems = data.items;
+    render();
   }
+
+  // --- Detail-Overlay mit Preis-Historie ---
+
+  function buildStepChart(events, currentPrice) {
+    const points = events
+      .filter((e) => e.price != null)
+      .map((e) => ({ price: e.price, at: new Date(e.at).getTime() }));
+    if (points.length === 0) return "<p style='color:var(--muted)'>Noch keine Preis-Historie.</p>";
+    if (points.length === 1) points.push({ price: currentPrice, at: Date.now() });
+    else points.push({ price: points[points.length - 1].price, at: Date.now() });
+
+    const W = 600, H = 160, PAD = 30;
+    const minT = points[0].at, maxT = points[points.length - 1].at;
+    const prices = points.map((p) => p.price);
+    let minP = Math.min(...prices), maxP = Math.max(...prices);
+    if (minP === maxP) { minP -= 1; maxP += 1; }
+
+    const x = (t) => PAD + ((t - minT) / Math.max(1, maxT - minT)) * (W - PAD * 2);
+    const y = (p) => H - PAD + ((maxP - p) / (maxP - minP)) * (H - PAD * 2 - 10);
+
+    let d = `M ${x(points[0].at)} ${y(points[0].price)}`;
+    for (let i = 1; i < points.length; i++) {
+      d += ` L ${x(points[i].at)} ${y(points[i - 1].price)}`;
+      d += ` L ${x(points[i].at)} ${y(points[i].price)}`;
+    }
+
+    return `
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="#0a5688" stroke-width="1" />
+        <text x="${PAD}" y="14" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtMoney(maxP)}</text>
+        <text x="${PAD}" y="${H - PAD + 14}" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtMoney(minP)}</text>
+        <path d="${d}" fill="none" stroke="#43edf8" stroke-width="2" style="filter: drop-shadow(0 0 4px rgba(67,237,248,0.6))" />
+      </svg>`;
+  }
+
+  async function openDetail(itemId) {
+    const overlay = document.getElementById("overlay");
+    const body = document.getElementById("detail-body");
+    overlay.classList.add("visible");
+    body.innerHTML = "lädt…";
+
+    const item = allItems.find((i) => i.id === itemId);
+    const res = await fetch(`/api/items/${itemId}/history`);
+    const data = await res.json();
+    const stats = data.stats;
+
+    const statCards = stats
+      ? `
+        <div class="stat-card"><div class="label">Aktueller Preis</div><div class="value">${fmtMoney(stats.currentPrice)}</div></div>
+        <div class="stat-card"><div class="label">Allzeit-Tief</div><div class="value">${fmtMoney(stats.allTimeLow)}</div></div>
+        <div class="stat-card"><div class="label">Allzeit-Hoch</div><div class="value">${fmtMoney(stats.allTimeHigh)}</div></div>
+        <div class="stat-card"><div class="label">Preisänderungen</div><div class="value">${stats.priceChangeCount}</div></div>
+      `
+      : "";
+
+    const historyRows = data.events
+      .slice()
+      .reverse()
+      .map((e) => `<div class="row"><span class="p">${fmtMoney(e.price)}${e.availability === "OutOfStock" ? " (nicht kaufbar)" : ""}</span><span class="t">${fmtDate(e.at)}</span></div>`)
+      .join("");
+
+    body.innerHTML = `
+      <button class="close" id="detail-close">✕ Schließen</button>
+      <h2>${item ? item.name : data.item.name}</h2>
+      <div style="color:var(--muted); font-size:12px;">${stats ? "Getrackt seit " + fmtDate(stats.trackedSince) : "Noch keine Historie"}</div>
+      ${stats ? `<div id="detail-stats">${statCards}</div>` : ""}
+      <div id="chart-wrap">${stats ? buildStepChart(data.events, stats.currentPrice) : ""}</div>
+      <div id="history-list">${historyRows}</div>
+      ${item ? `<a class="store-link" href="${item.url}" target="_blank" rel="noopener">Im RSI-Store öffnen →</a>` : ""}
+    `;
+    document.getElementById("detail-close").addEventListener("click", () => overlay.classList.remove("visible"));
+  }
+
+  document.getElementById("overlay").addEventListener("click", (e) => {
+    if (e.target.id === "overlay") e.currentTarget.classList.remove("visible");
+  });
+
+  // --- Kalender ---
 
   const MONTH_NAMES = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
@@ -230,13 +450,9 @@
 
     document.getElementById("cal-recurring").innerHTML = withDates
       .map((e) => {
-        const whenText = e.day
-          ? `${e.day}. ${MONTH_NAMES[e.month - 1]}`
-          : `${MONTH_NAMES[e.month - 1]} (erwartet)`;
+        const whenText = e.day ? `${e.day}. ${MONTH_NAMES[e.month - 1]}` : `${MONTH_NAMES[e.month - 1]} (erwartet)`;
         const daysUntil = Math.round((e.nextDate - new Date()) / 86400000);
-        const badge = e.majorSale
-          ? `<span class="badge major">Großer Sale</span>`
-          : `<span class="badge minor">Kein großer Sale</span>`;
+        const badge = e.majorSale ? `<span class="badge major">Großer Sale</span>` : `<span class="badge minor">Kein großer Sale</span>`;
         return `
           <div class="cal-item">
             <div class="top-row">
@@ -302,12 +518,45 @@
     renderShipsInDevelopment(data.shipsInDevelopment);
   }
 
-  document.getElementById("filters").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-filter]");
+  // --- Statistiken ---
+
+  async function loadStats() {
+    const res = await fetch("/api/stats");
+    const s = await res.json();
+    const grid = document.getElementById("stat-grid");
+    if (!s.totalItems) {
+      grid.innerHTML = `<p style="color:var(--muted)">Noch keine Daten — erster Scan läuft noch.</p>`;
+      return;
+    }
+    grid.innerHTML = `
+      <div class="stat-card"><div class="label">Getrackte Items</div><div class="value">${s.totalItems}</div></div>
+      <div class="stat-card"><div class="label">Aktuell im Sale</div><div class="value">${s.onSaleCount}</div></div>
+      <div class="stat-card"><div class="label">Gesamtwert Flotte</div><div class="value">${fmtMoney(s.totalCatalogValue)}</div><div class="sub">Summe aller aktuellen Preise</div></div>
+      <div class="stat-card"><div class="label">Ø-Preis</div><div class="value">${fmtMoney(s.avgPrice)}</div></div>
+      <div class="stat-card"><div class="label">Günstigstes Schiff</div><div class="value">${fmtMoney(s.cheapest.price)}</div><div class="sub">${s.cheapest.name}</div></div>
+      <div class="stat-card"><div class="label">Teuerstes Schiff</div><div class="value">${fmtMoney(s.priciest.price)}</div><div class="sub">${s.priciest.name}</div></div>
+      ${s.biggestDiscount ? `<div class="stat-card"><div class="label">Größter Rabatt gerade</div><div class="value">-${s.biggestDiscount.discountPct}%</div><div class="sub">${s.biggestDiscount.name}</div></div>` : ""}
+      <div class="stat-card"><div class="label">Preisänderungen getrackt</div><div class="value">${s.totalPriceChangesTracked}</div></div>
+      <div class="stat-card"><div class="label">Ankündigungen getrackt</div><div class="value">${s.totalAnnouncementsTracked}</div></div>
+    `;
+  }
+
+  // --- Tabs / Steuerung ---
+
+  document.getElementById("toolbar").addEventListener("click", (e) => {
+    const btn = e.target.closest(".pillbtn");
     if (!btn) return;
     filter = btn.dataset.filter;
-    document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("active", b === btn));
-    loadItems();
+    document.querySelectorAll(".pillbtn").forEach((b) => b.classList.toggle("active", b === btn));
+    render();
+  });
+  document.getElementById("search").addEventListener("input", (e) => {
+    searchTerm = e.target.value;
+    render();
+  });
+  document.getElementById("sort").addEventListener("change", (e) => {
+    sortMode = e.target.value;
+    render();
   });
 
   document.getElementById("tabs").addEventListener("click", (e) => {
@@ -316,11 +565,13 @@
     activeTab = btn.dataset.tab;
     document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b === btn));
 
-    const isCalendar = activeTab === "calendar";
-    document.getElementById("calendar").classList.toggle("visible", isCalendar);
-    document.getElementById("filters").classList.toggle("hidden", isCalendar);
-    document.getElementById("grid").classList.toggle("hidden", isCalendar);
-    if (isCalendar) loadCalendar();
+    document.getElementById("calendar").classList.toggle("visible", activeTab === "calendar");
+    document.getElementById("stats-view").classList.toggle("visible", activeTab === "stats");
+    document.getElementById("toolbar").classList.toggle("hidden", activeTab !== "sales");
+    document.getElementById("grid").classList.toggle("hidden", activeTab !== "sales");
+
+    if (activeTab === "calendar") loadCalendar();
+    if (activeTab === "stats") loadStats();
   });
 
   pollStatus();
