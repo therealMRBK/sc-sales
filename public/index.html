@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Star Citizen Store-Sales</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --card: #141a24;
+    --border: #23303f;
+    --text: #e6ecf3;
+    --muted: #8b98a9;
+    --accent: #ffb020;
+    --sale: #2ecc71;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 20px 24px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  #status { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  #filters {
+    display: flex; gap: 8px; padding: 12px 24px; flex-wrap: wrap;
+  }
+  #filters button {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  }
+  #filters button.active { border-color: var(--accent); color: var(--accent); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+    padding: 8px 24px 32px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; }
+  .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .card .name { font-weight: 600; font-size: 14px; }
+  .card .manufacturer { height: 16px; opacity: 0.7; }
+  .card .manufacturer img { height: 100%; filter: grayscale(1) brightness(1.6); }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+  }
+  .badge.sale { background: var(--sale); color: #06210f; }
+  .badge.newly { background: var(--accent); color: #2a1900; }
+  .price-row { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+  .price { font-size: 16px; font-weight: 700; }
+  .price.on-sale { color: var(--sale); }
+  .baseline { font-size: 12px; color: var(--muted); text-decoration: line-through; }
+  .unavailable { font-size: 11px; color: var(--muted); }
+  a.card-link { color: inherit; text-decoration: none; }
+  #empty { padding: 40px 24px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚀 Star Citizen Store-Sales</h1>
+  <p>Beobachtet den RSI Pledge-Store und markiert Preissenkungen &amp; neu verfügbare Schiffe.</p>
+  <div id="status">lädt…</div>
+</header>
+<div id="filters">
+  <button data-filter="sale" class="active">Nur Sales</button>
+  <button data-filter="all">Alle Items</button>
+</div>
+<div id="grid"></div>
+<div id="empty" hidden>Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.</div>
+
+<script>
+  let lastScanAt = null;
+  let filter = "sale";
+
+  function fmtMoney(v) {
+    if (v == null) return "–";
+    return "$" + v.toFixed(2);
+  }
+
+  function fmtRelative(iso) {
+    if (!iso) return "noch nie";
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return "gerade eben";
+    if (mins < 60) return `vor ${mins} Min.`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `vor ${hours} Std.`;
+    return `vor ${Math.round(hours / 24)} Tagen`;
+  }
+
+  async function pollStatus() {
+    try {
+      const res = await fetch("/api/status");
+      const status = await res.json();
+      document.getElementById("status").textContent =
+        `Letzter Scan: ${fmtRelative(status.lastScanAt)}` +
+        (status.lastScanAt ? ` (${status.lastScanOk} ok${status.lastScanFailed ? ", " + status.lastScanFailed + " Fehler" : ""})` : "") +
+        ` · Intervall: alle ${status.scanIntervalMinutes} Min.`;
+      if (status.lastScanAt !== lastScanAt) {
+        lastScanAt = status.lastScanAt;
+        loadItems();
+      }
+    } catch (e) {
+      document.getElementById("status").textContent = "Status nicht erreichbar";
+    }
+  }
+
+  function render(items) {
+    const grid = document.getElementById("grid");
+    const empty = document.getElementById("empty");
+    const visible = filter === "sale" ? items.filter((i) => i.onSale || i.newlyAvailable) : items;
+
+    if (visible.length === 0) {
+      grid.innerHTML = "";
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    grid.innerHTML = visible
+      .map((item) => {
+        const badges = [];
+        if (item.onSale) badges.push(`<span class="badge sale">-${item.discountPct}%</span>`);
+        if (item.newlyAvailable) badges.push(`<span class="badge newly">Neu verfügbar</span>`);
+        const priceHtml = item.onSale
+          ? `<span class="price on-sale">${fmtMoney(item.price)}</span><span class="baseline">${fmtMoney(item.baselinePrice)}</span>`
+          : `<span class="price">${fmtMoney(item.price)}</span>`;
+        const unavailable = item.availability === "OutOfStock" ? `<div class="unavailable">aktuell nicht einzeln kaufbar</div>` : "";
+        return `
+          <a class="card-link" href="${item.url}" target="_blank" rel="noopener">
+            <div class="card">
+              ${item.image ? `<img src="${item.image}" loading="lazy" alt="${item.name}" />` : ""}
+              <div class="body">
+                <div class="badges">${badges.join("")}</div>
+                <div class="name">${item.name}</div>
+                <div class="manufacturer">${item.manufacturer ? `<img src="${item.manufacturer}" alt="" />` : ""}</div>
+                <div class="price-row">${priceHtml}</div>
+                ${unavailable}
+              </div>
+            </div>
+          </a>`;
+      })
+      .join("");
+  }
+
+  async function loadItems() {
+    const res = await fetch("/api/items");
+    const data = await res.json();
+    render(data.items);
+  }
+
+  document.getElementById("filters").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-filter]");
+    if (!btn) return;
+    filter = btn.dataset.filter;
+    document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("active", b === btn));
+    loadItems();
+  });
+
+  pollStatus();
+  loadItems();
+  setInterval(pollStatus, 60000);
+</script>
+</body>
+</html>

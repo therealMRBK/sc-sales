@@ -1,0 +1,15 @@
+{
+  "name": "sc-sales",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Periodischer Scanner für den Roberts Space Industries Pledge-Store, hebt Preissenkungen und neu verfügbare Schiffe hervor.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "express": "^4.21.2"
+  }
+}
