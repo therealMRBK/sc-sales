@@ -1,6 +1,6 @@
 const path = require("path");
 const express = require("express");
-const { getItemsWithSaleInfo, getMeta, getRecentAnnouncements, getShipsInDevelopment, getItemHistory, getStats } = require("./db");
+const { getItemsWithSaleInfo, getMeta, setMeta, getRecentAnnouncements, getShipsInDevelopment, getItemHistory, getStats } = require("./db");
 const { runScan, scanCommLink, scanShipsInDevelopment } = require("./scanner");
 const RECURRING_EVENTS = require("./events");
 
@@ -57,28 +57,32 @@ app.listen(PORT, () => {
   scheduleScans();
 });
 
+// Ein einziger, selbst-nachplanender Zyklus statt mehrerer setInterval --
+// garantiert, dass Preis-Scan, Comm-Link- und Ship-Matrix-Scan echt
+// nacheinander laufen und niemals überlappen (ein vorheriger Bug feuerte
+// alle drei gleichzeitig los, was RSI kurzzeitig mit parallelen Requests
+// überlastete und zu vereinzelten Timeouts/Fehlern führte). setTimeout nach
+// Abschluss statt setInterval verhindert außerdem ein Aufstauen, falls ein
+// Zyklus mal länger als das Intervall dauert.
+async function runCycle() {
+  await runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
+  await scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
+
+  const lastShipMatrixRun = getMeta("last_ship_matrix_run_at");
+  const dueForShipMatrix =
+    !lastShipMatrixRun || Date.now() - new Date(lastShipMatrixRun).getTime() >= SHIP_MATRIX_INTERVAL_HOURS * 60 * 60 * 1000;
+  if (dueForShipMatrix) {
+    await scanShipsInDevelopment().catch((err) => console.error("[ship-matrix] fehlgeschlagen:", err));
+    setMeta("last_ship_matrix_run_at", new Date().toISOString());
+  }
+}
+
 function scheduleScans() {
   const kickoffDelayMs = 5000; // kurz warten, bis der Server durchgestartet ist
+  const intervalMs = SCAN_INTERVAL_MINUTES * 60 * 1000;
 
-  setTimeout(() => {
-    runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
-    // Nacheinander, nicht parallel -- teilt sich denselben REQUEST_DELAY_MS-
-    // Rhythmus und vermeidet, RSI gleichzeitig aus zwei Richtungen anzufragen.
-    scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
-    scanShipsInDevelopment().catch((err) => console.error("[ship-matrix] fehlgeschlagen:", err));
-  }, kickoffDelayMs);
-
-  setInterval(() => {
-    runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
-  }, SCAN_INTERVAL_MINUTES * 60 * 1000);
-
-  setInterval(() => {
-    scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
-  }, SCAN_INTERVAL_MINUTES * 60 * 1000);
-
-  // Ship-Matrix ist ein ~5MB-Dump und ändert sich selten -- seltener pollen
-  // als den Preis-Scan.
-  setInterval(() => {
-    scanShipsInDevelopment().catch((err) => console.error("[ship-matrix] fehlgeschlagen:", err));
-  }, SHIP_MATRIX_INTERVAL_HOURS * 60 * 60 * 1000);
+  function tick() {
+    runCycle().finally(() => setTimeout(tick, intervalMs));
+  }
+  setTimeout(tick, kickoffDelayMs);
 }
