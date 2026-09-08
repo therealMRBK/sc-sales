@@ -1,9 +1,31 @@
-const { upsertItem, addSnapshot, setMeta } = require("./db");
+const { upsertItem, addSnapshot, setMeta, upsertAnnouncementIfNew, replaceShipsInDevelopment } = require("./db");
 
 const USER_AGENT =
   "sc-sales-scanner/1.0 (privater Preis-Tracker; kontakt siehe robertsspaceindustries.com Forum-Profil baris.kilic)";
 const REQUEST_DELAY_MS = Number(process.env.SCAN_REQUEST_DELAY_MS || 400);
 const PAGE_SIZE = 10; // von RSI fest vorgegeben, nicht konfigurierbar
+
+// Titel-Schlagworte bekannter Events -- ein Comm-Link-Artikel, dessen Titel
+// eines davon enthält, ist mit hoher Wahrscheinlichkeit eine echte
+// Termin-Ankündigung, kein reiner Status-Post ("This Week in Star Citizen").
+const EVENT_KEYWORDS = [
+  "Invictus",
+  "Alien Week",
+  "Foundation Festival",
+  "Pirate Week",
+  "CitizenCon",
+  "Intergalactic Aerospace Expo",
+  "IAE",
+  "Luminalia",
+  "AnniVERSEary",
+  "Anniversary",
+  "Free Fly",
+  "Red Festival",
+  "Coramor",
+  "Stella Fortuna",
+  "Day of Vara",
+  "Siege of Orison",
+];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -158,4 +180,84 @@ async function runScan(log = console.log) {
   log(`[scan] Fertig in ${seconds}s. ok=${ok} failed=${failed}`);
 }
 
-module.exports = { runScan };
+function extractCommLinkArticles(html) {
+  const articles = [];
+  const linkRe =
+    /href="(\/comm-link\/[a-zA-Z0-9/_-]+)"[^>]*data-original_class="[^"]*"[\s\S]*?background-image:url\('([^']+)'\)[\s\S]*?<div class="title-holder">\s*<div class="title[^"]*">([^<]+)</g;
+  let m;
+  while ((m = linkRe.exec(html))) {
+    const [, path, image, title] = m;
+    articles.push({
+      id: path.replace(/^\/comm-link\//, ""),
+      url: "https://robertsspaceindustries.com" + path,
+      image,
+      title: title.trim(),
+    });
+  }
+  return articles;
+}
+
+function matchEventKeywords(title) {
+  return EVENT_KEYWORDS.filter((kw) => title.toLowerCase().includes(kw.toLowerCase()));
+}
+
+// Scannt die Comm-Link-Newsliste nach neuen Artikeln. Läuft inkrementell:
+// sobald ein bereits bekannter Artikel auftaucht, wird die jeweilige Seite
+// nicht weiter zurückverfolgt (Listing ist zeitlich absteigend sortiert).
+// `maxPages` begrenzt trotzdem nach oben, falls z.B. beim allerersten Lauf
+// noch nichts bekannt ist (Backfill).
+async function scanCommLink(log = console.log, maxPages = 5) {
+  let newCount = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    await sleep(REQUEST_DELAY_MS);
+    const url = page === 1 ? "https://robertsspaceindustries.com/en/comm-link" : `https://robertsspaceindustries.com/en/comm-link?page=${page}`;
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+    if (!res.ok) throw new Error(`comm-link page ${page} failed: HTTP ${res.status}`);
+    const html = await res.text();
+    const articles = extractCommLinkArticles(html);
+    if (articles.length === 0) break;
+
+    let sawKnown = false;
+    for (const article of articles) {
+      const isNew = upsertAnnouncementIfNew({ ...article, matchedKeywords: matchEventKeywords(article.title) });
+      if (isNew) newCount++;
+      else sawKnown = true;
+    }
+    if (sawKnown) break; // Rest der Liste war beim letzten Scan schon bekannt
+  }
+  log(`[comm-link] ${newCount} neue Artikel gefunden.`);
+  return newCount;
+}
+
+// Ship-Matrix ist ein einzelner ~5MB-JSON-Dump aller Schiffe inkl.
+// Produktionsstatus (flight-ready / in-concept). Kein Datum enthalten --
+// RSI veröffentlicht keine verbindlichen Release-Termine für Schiffe in
+// Entwicklung, nur den groben Status + einen kurzen Freitext-Hinweis.
+async function scanShipsInDevelopment(log = console.log) {
+  const res = await fetch("https://robertsspaceindustries.com/ship-matrix/index", {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!res.ok) throw new Error(`ship-matrix failed: HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.success !== 1) throw new Error("ship-matrix unsuccessful response");
+
+  // Kein flaches Bild-URL-Feld in dieser API (nur eine derived_data.sizes-
+  // Struktur ohne direkte URLs) -- daher nur der Link zur Schiffsseite, kein
+  // Vorschaubild.
+  const inDev = data.data
+    .filter((s) => s.production_status && s.production_status !== "flight-ready")
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      status: s.production_status,
+      note: s.production_note || null,
+      image: null,
+      url: s.url ? "https://robertsspaceindustries.com" + s.url : null,
+    }));
+
+  replaceShipsInDevelopment(inDev);
+  log(`[ship-matrix] ${inDev.length} Schiffe in Entwicklung.`);
+  return inDev.length;
+}
+
+module.exports = { runScan, scanCommLink, scanShipsInDevelopment };

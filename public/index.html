@@ -28,6 +28,12 @@
   header h1 { margin: 0 0 4px; font-size: 22px; }
   header p { margin: 0; color: var(--muted); font-size: 13px; }
   #status { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  #tabs { display: flex; gap: 8px; padding: 12px 24px 0; }
+  #tabs button {
+    background: none; border: none; color: var(--muted); font-size: 14px;
+    padding: 8px 4px; cursor: pointer; border-bottom: 2px solid transparent;
+  }
+  #tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
   #filters {
     display: flex; gap: 8px; padding: 12px 24px; flex-wrap: wrap;
   }
@@ -61,6 +67,8 @@
   }
   .badge.sale { background: var(--sale); color: #06210f; }
   .badge.newly { background: var(--accent); color: #2a1900; }
+  .badge.major { background: #ff5d73; color: #2a0008; }
+  .badge.minor { background: var(--border); color: var(--muted); }
   .price-row { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
   .price { font-size: 16px; font-weight: 700; }
   .price.on-sale { color: var(--sale); }
@@ -68,6 +76,23 @@
   .unavailable { font-size: 11px; color: var(--muted); }
   a.card-link { color: inherit; text-decoration: none; }
   #empty { padding: 40px 24px; color: var(--muted); text-align: center; }
+
+  #calendar { padding: 8px 24px 40px; display: none; }
+  #calendar.visible { display: block; }
+  #grid.hidden, #filters.hidden, #empty.hidden-tab { display: none; }
+  .cal-section h2 { font-size: 15px; margin: 24px 0 10px; color: var(--text); }
+  .cal-section:first-child h2 { margin-top: 8px; }
+  .cal-list { display: flex; flex-direction: column; gap: 8px; }
+  .cal-item {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .cal-item .top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .cal-item .title { font-weight: 600; font-size: 14px; }
+  .cal-item .when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .cal-item .note { font-size: 12px; color: var(--muted); }
+  .cal-item a { color: var(--accent); text-decoration: none; font-size: 12px; }
+  .cal-hint { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
 </style>
 </head>
 <body>
@@ -76,6 +101,10 @@
   <p>Beobachtet den RSI Pledge-Store und markiert Preissenkungen &amp; neu verfügbare Schiffe.</p>
   <div id="status">lädt…</div>
 </header>
+<div id="tabs">
+  <button data-tab="sales" class="active">Sales</button>
+  <button data-tab="calendar">📅 Kalender</button>
+</div>
 <div id="filters">
   <button data-filter="sale" class="active">Nur Sales</button>
   <button data-filter="all">Alle Items</button>
@@ -83,9 +112,28 @@
 <div id="grid"></div>
 <div id="empty" hidden>Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.</div>
 
+<div id="calendar">
+  <div class="cal-section">
+    <h2>Nächste erwartete Events</h2>
+    <p class="cal-hint">Basiert auf dem üblichen Muster vergangener Jahre — RSI legt den genauen Termin erst kurz vorher offiziell fest. Sobald eine passende Ankündigung erkannt wird, taucht sie unten mit echtem Link auf.</p>
+    <div class="cal-list" id="cal-recurring"></div>
+  </div>
+  <div class="cal-section">
+    <h2>Aktuelle Ankündigungen (RSI Comm-Link)</h2>
+    <p class="cal-hint">Automatisch erkannte News-Artikel, rot markiert wenn sie zu einem bekannten Event passen.</p>
+    <div class="cal-list" id="cal-announcements"></div>
+  </div>
+  <div class="cal-section">
+    <h2>Schiffe in Entwicklung</h2>
+    <p class="cal-hint">Aus RSIs eigener Ship-Matrix — nur Status, kein Termin. RSI veröffentlicht keine verbindlichen Release-Daten für Schiffe in Entwicklung.</p>
+    <div class="cal-list" id="cal-ships"></div>
+  </div>
+</div>
+
 <script>
   let lastScanAt = null;
   let filter = "sale";
+  let activeTab = "sales";
 
   function fmtMoney(v) {
     if (v == null) return "–";
@@ -164,12 +212,115 @@
     render(data.items);
   }
 
+  const MONTH_NAMES = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+
+  function nextOccurrence(month, day) {
+    const now = new Date();
+    const d = day || 1;
+    let year = now.getFullYear();
+    let candidate = new Date(year, month - 1, d);
+    if (candidate < now) candidate = new Date(year + 1, month - 1, d);
+    return candidate;
+  }
+
+  function renderRecurringEvents(events) {
+    const withDates = events
+      .map((e) => ({ ...e, nextDate: nextOccurrence(e.month, e.day) }))
+      .sort((a, b) => a.nextDate - b.nextDate);
+
+    document.getElementById("cal-recurring").innerHTML = withDates
+      .map((e) => {
+        const whenText = e.day
+          ? `${e.day}. ${MONTH_NAMES[e.month - 1]}`
+          : `${MONTH_NAMES[e.month - 1]} (erwartet)`;
+        const daysUntil = Math.round((e.nextDate - new Date()) / 86400000);
+        const badge = e.majorSale
+          ? `<span class="badge major">Großer Sale</span>`
+          : `<span class="badge minor">Kein großer Sale</span>`;
+        return `
+          <div class="cal-item">
+            <div class="top-row">
+              <span class="title">${e.name}</span>
+              <span class="when">${whenText} · in ${daysUntil} Tagen</span>
+            </div>
+            <div>${badge}</div>
+            <div class="note">${e.note}</div>
+          </div>`;
+      })
+      .join("");
+  }
+
+  function renderAnnouncements(announcements) {
+    const el = document.getElementById("cal-announcements");
+    if (announcements.length === 0) {
+      el.innerHTML = `<p class="cal-hint">Noch keine Ankündigungen gesammelt — baut sich mit jedem Scan auf.</p>`;
+      return;
+    }
+    el.innerHTML = announcements
+      .map((a) => {
+        const isEvent = a.matchedKeywords && a.matchedKeywords.length > 0;
+        const badge = isEvent ? `<span class="badge major">${a.matchedKeywords[0]}</span>` : "";
+        return `
+          <div class="cal-item">
+            <div class="top-row">
+              <span class="title">${a.title}</span>
+              <span class="when">${fmtRelative(a.first_seen_at)}</span>
+            </div>
+            ${badge ? `<div>${badge}</div>` : ""}
+            <a href="${a.url}" target="_blank" rel="noopener">Artikel öffnen →</a>
+          </div>`;
+      })
+      .join("");
+  }
+
+  function renderShipsInDevelopment(ships) {
+    const el = document.getElementById("cal-ships");
+    if (ships.length === 0) {
+      el.innerHTML = `<p class="cal-hint">Noch nicht geladen.</p>`;
+      return;
+    }
+    el.innerHTML = ships
+      .map(
+        (s) => `
+          <div class="cal-item">
+            <div class="top-row">
+              <span class="title">${s.name}</span>
+              <span class="when">${s.status === "in-concept" ? "In Konzept" : s.status}</span>
+            </div>
+            ${s.note ? `<div class="note">${s.note}</div>` : ""}
+            ${s.url ? `<a href="${s.url}" target="_blank" rel="noopener">Mehr erfahren →</a>` : ""}
+          </div>`
+      )
+      .join("");
+  }
+
+  async function loadCalendar() {
+    const res = await fetch("/api/calendar");
+    const data = await res.json();
+    renderRecurringEvents(data.recurringEvents);
+    renderAnnouncements(data.announcements);
+    renderShipsInDevelopment(data.shipsInDevelopment);
+  }
+
   document.getElementById("filters").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-filter]");
     if (!btn) return;
     filter = btn.dataset.filter;
     document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("active", b === btn));
     loadItems();
+  });
+
+  document.getElementById("tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-tab]");
+    if (!btn) return;
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b === btn));
+
+    const isCalendar = activeTab === "calendar";
+    document.getElementById("calendar").classList.toggle("visible", isCalendar);
+    document.getElementById("filters").classList.toggle("hidden", isCalendar);
+    document.getElementById("grid").classList.toggle("hidden", isCalendar);
+    if (isCalendar) loadCalendar();
   });
 
   pollStatus();

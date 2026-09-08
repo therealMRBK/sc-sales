@@ -1,10 +1,12 @@
 const path = require("path");
 const express = require("express");
-const { getItemsWithSaleInfo, getMeta } = require("./db");
-const { runScan } = require("./scanner");
+const { getItemsWithSaleInfo, getMeta, getRecentAnnouncements, getShipsInDevelopment } = require("./db");
+const { runScan, scanCommLink, scanShipsInDevelopment } = require("./scanner");
+const RECURRING_EVENTS = require("./events");
 
 const PORT = process.env.PORT || 3000;
-const SCAN_INTERVAL_MINUTES = Number(process.env.SCAN_INTERVAL_MINUTES || 180);
+const SCAN_INTERVAL_MINUTES = Number(process.env.SCAN_INTERVAL_MINUTES || 60);
+const SHIP_MATRIX_INTERVAL_HOURS = Number(process.env.SHIP_MATRIX_INTERVAL_HOURS || 24);
 
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
@@ -32,6 +34,14 @@ app.get("/api/items", (req, res) => {
   res.json({ items });
 });
 
+app.get("/api/calendar", (req, res) => {
+  res.json({
+    recurringEvents: RECURRING_EVENTS,
+    announcements: getRecentAnnouncements(30),
+    shipsInDevelopment: getShipsInDevelopment(),
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`sc-sales läuft auf Port ${PORT}`);
   scheduleScans();
@@ -39,11 +49,26 @@ app.listen(PORT, () => {
 
 function scheduleScans() {
   const kickoffDelayMs = 5000; // kurz warten, bis der Server durchgestartet ist
+
   setTimeout(() => {
     runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
+    // Nacheinander, nicht parallel -- teilt sich denselben REQUEST_DELAY_MS-
+    // Rhythmus und vermeidet, RSI gleichzeitig aus zwei Richtungen anzufragen.
+    scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
+    scanShipsInDevelopment().catch((err) => console.error("[ship-matrix] fehlgeschlagen:", err));
   }, kickoffDelayMs);
 
   setInterval(() => {
     runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
   }, SCAN_INTERVAL_MINUTES * 60 * 1000);
+
+  setInterval(() => {
+    scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
+  }, SCAN_INTERVAL_MINUTES * 60 * 1000);
+
+  // Ship-Matrix ist ein ~5MB-Dump und ändert sich selten -- seltener pollen
+  // als den Preis-Scan.
+  setInterval(() => {
+    scanShipsInDevelopment().catch((err) => console.error("[ship-matrix] fehlgeschlagen:", err));
+  }, SHIP_MATRIX_INTERVAL_HOURS * 60 * 60 * 1000);
 }

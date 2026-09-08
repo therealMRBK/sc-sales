@@ -35,6 +35,25 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS announcements (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    image TEXT,
+    matched_keywords TEXT,
+    first_seen_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS ships_in_development (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    status TEXT,
+    note TEXT,
+    image TEXT,
+    url TEXT,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 function upsertItem(item) {
@@ -154,4 +173,54 @@ function getItemsWithSaleInfo() {
   });
 }
 
-module.exports = { db, upsertItem, addSnapshot, setMeta, getMeta, getItemsWithSaleInfo };
+// Gibt zurück, ob der Artikel neu war (für Logging/Zählung beim Scan).
+function upsertAnnouncementIfNew(announcement) {
+  const existing = db.prepare("SELECT id FROM announcements WHERE id = ?").get(announcement.id);
+  if (existing) return false;
+  db.prepare(
+    `INSERT INTO announcements (id, title, url, image, matched_keywords, first_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    announcement.id,
+    announcement.title,
+    announcement.url,
+    announcement.image,
+    JSON.stringify(announcement.matchedKeywords || []),
+    new Date().toISOString()
+  );
+  return true;
+}
+
+function getRecentAnnouncements(limit = 30) {
+  const rows = db.prepare("SELECT * FROM announcements ORDER BY first_seen_at DESC LIMIT ?").all(limit);
+  return rows.map((r) => ({ ...r, matchedKeywords: JSON.parse(r.matched_keywords || "[]") }));
+}
+
+function replaceShipsInDevelopment(ships) {
+  const now = new Date().toISOString();
+  const tx = db.transaction((list) => {
+    db.prepare("DELETE FROM ships_in_development").run();
+    const insert = db.prepare(
+      `INSERT INTO ships_in_development (id, name, status, note, image, url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const s of list) insert.run(String(s.id), s.name, s.status, s.note, s.image, s.url, now);
+  });
+  tx(ships);
+}
+
+function getShipsInDevelopment() {
+  return db.prepare("SELECT * FROM ships_in_development ORDER BY name").all();
+}
+
+module.exports = {
+  db,
+  upsertItem,
+  addSnapshot,
+  setMeta,
+  getMeta,
+  getItemsWithSaleInfo,
+  upsertAnnouncementIfNew,
+  getRecentAnnouncements,
+  replaceShipsInDevelopment,
+  getShipsInDevelopment,
+};
