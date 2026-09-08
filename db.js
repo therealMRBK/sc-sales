@@ -25,6 +25,8 @@ db.exec(`
     item_id TEXT NOT NULL REFERENCES items(id),
     price REAL,
     availability TEXT,
+    current_price REAL,
+    reference_price REAL,
     checked_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_snapshots_item_time ON snapshots(item_id, checked_at);
@@ -50,10 +52,10 @@ function upsertItem(item) {
   }
 }
 
-function addSnapshot(itemId, price, availability) {
+function addSnapshot(itemId, price, availability, currentPrice = null, referencePrice = null) {
   db.prepare(
-    `INSERT INTO snapshots (item_id, price, availability, checked_at) VALUES (?, ?, ?, ?)`
-  ).run(itemId, price, availability, new Date().toISOString());
+    `INSERT INTO snapshots (item_id, price, availability, current_price, reference_price, checked_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(itemId, price, availability, currentPrice, referencePrice, new Date().toISOString());
 }
 
 function setMeta(key, value) {
@@ -76,7 +78,7 @@ function getMeta(key) {
 function getItemsWithSaleInfo() {
   const items = db.prepare("SELECT * FROM items ORDER BY name").all();
   const latestStmt = db.prepare(
-    `SELECT price, availability, checked_at FROM snapshots
+    `SELECT price, availability, current_price, reference_price, checked_at FROM snapshots
      WHERE item_id = ? ORDER BY checked_at DESC LIMIT 1`
   );
   const historyStmt = db.prepare(
@@ -87,27 +89,51 @@ function getItemsWithSaleInfo() {
 
   return items.map((item) => {
     const latest = latestStmt.get(item.id);
-    if (!latest) return { ...item, price: null, availability: null, onSale: false, discountPct: null, newlyAvailable: false };
+    if (!latest) return { ...item, price: null, availability: null, onSale: false, discountPct: null, newlyAvailable: false, saleType: null };
+
+    // Primäres Signal: RSI selbst liefert für dieses Item mehrere Preis-Tiers
+    // unter den "Standalone-Ships"-Angeboten (z.B. ein günstigerer, nicht
+    // erstattungsfähiger "Warbond"-Preis neben dem normalen Preis, oder jede
+    // andere Rabatt-Variante). Der höchste Tier ist der Streichpreis (MSRP),
+    // der niedrigste der tatsächlich zahlbare Preis -- unabhängig vom Namen
+    // der SKU. Braucht keine eigene Preis-Historie.
+    const hasTierDiscount =
+      latest.current_price != null && latest.reference_price != null && latest.current_price < latest.reference_price;
 
     const history = historyStmt.all(item.id);
     const priorHistory = history.slice(1); // ohne den aktuellsten Snapshot
 
+    let onSale = false;
+    let discountPct = null;
     let baselinePrice = latest.price;
-    if (priorHistory.length > 0) {
-      const counts = new Map();
-      for (const h of priorHistory) {
-        if (h.price == null) continue;
-        counts.set(h.price, (counts.get(h.price) || 0) + 1);
-      }
-      let best = null;
-      for (const [price, count] of counts) {
-        if (!best || count > best.count) best = { price, count };
-      }
-      if (best) baselinePrice = best.price;
-    }
+    let saleType = null;
 
-    const onSale = latest.price != null && baselinePrice != null && latest.price < baselinePrice;
-    const discountPct = onSale ? Math.round((1 - latest.price / baselinePrice) * 100) : null;
+    if (hasTierDiscount) {
+      onSale = true;
+      baselinePrice = latest.reference_price;
+      discountPct = Math.round((1 - latest.current_price / latest.reference_price) * 100);
+      saleType = "listed_discount";
+    } else {
+      // Fallback: eigene Preis-Historie -- häufigster ("mode") Preis der
+      // letzten 30 Tage, den aktuellsten Snapshot ausgenommen. Fängt Fälle
+      // ab, wo RSI selbst keinen zweiten Preis-Tier zeigt, der Preis aber
+      // trotzdem gegenüber der eigenen Beobachtung gefallen ist.
+      if (priorHistory.length > 0) {
+        const counts = new Map();
+        for (const h of priorHistory) {
+          if (h.price == null) continue;
+          counts.set(h.price, (counts.get(h.price) || 0) + 1);
+        }
+        let best = null;
+        for (const [price, count] of counts) {
+          if (!best || count > best.count) best = { price, count };
+        }
+        if (best) baselinePrice = best.price;
+      }
+      onSale = latest.price != null && baselinePrice != null && latest.price < baselinePrice;
+      discountPct = onSale ? Math.round((1 - latest.price / baselinePrice) * 100) : null;
+      saleType = onSale ? "price_drop" : null;
+    }
 
     // "neu verfügbar": aktuell InStock, war aber in den letzten 14 Tagen
     // (den aktuellsten Snapshot ausgenommen) durchgehend OutOfStock.
@@ -117,12 +143,13 @@ function getItemsWithSaleInfo() {
 
     return {
       ...item,
-      price: latest.price,
+      price: hasTierDiscount ? latest.current_price : latest.price,
       availability: latest.availability,
       baselinePrice,
       onSale,
       discountPct,
       newlyAvailable,
+      saleType,
     };
   });
 }

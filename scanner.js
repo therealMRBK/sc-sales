@@ -94,20 +94,40 @@ async function fetchItemDetail(item) {
       // ignorieren: nicht jedes ld+json-Blob ist gültiges/erwartetes JSON
     }
   }
-  if (!product) return { price: null, availability: null, classification: null };
+  if (!product) return { price: null, availability: null, currentPrice: null, referencePrice: null };
 
-  let offer = product.offers;
+  const offer = product.offers;
+  let currentPrice = null;
+  let referencePrice = null;
+  let availability = null;
+
   if (offer && offer["@type"] === "AggregateOffer") {
-    // Bevorzugt das "Standalone-Ships"-Angebot -- der eigentliche Schiffspreis,
-    // nicht der CCU-/Upgrade-Preis, der in derselben AggregateOffer mitgeliefert wird.
-    const standalone = (offer.offers || []).find((o) => o.url && o.url.includes("/Standalone-Ships/"));
-    offer = standalone || (offer.offers || [])[0] || offer;
+    // Ein Schiff kann mehrere Einzelangebote haben (Standalone-Ships +
+    // Upgrades, je nochmal mit/ohne "Warbond" -- ein günstigerer, nicht
+    // erstattungsfähiger Echtgeld-Preis, der nur während einer aktiven
+    // Promotion angeboten wird). Nur "Standalone-Ships"-Angebote zählen als
+    // eigentlicher Schiffspreis, nicht der CCU-/Upgrade-Preis. Gibt es davon
+    // mehrere Preis-Tiers, ist der höchste der Streichpreis (MSRP) und der
+    // niedrigste der tatsächlich zahlbare Preis -- unabhängig davon, wie die
+    // billigere Variante benannt ist (Warbond oder sonst eine Aktion).
+    const standaloneOffers = (offer.offers || []).filter((o) => o.url && o.url.includes("/Standalone-Ships/"));
+    const pool = standaloneOffers.length > 0 ? standaloneOffers : offer.offers || [];
+    const withPrices = pool.filter((o) => o.price != null && !Number.isNaN(Number(o.price)));
+
+    if (withPrices.length > 0) {
+      const cheapest = withPrices.reduce((a, b) => (Number(a.price) <= Number(b.price) ? a : b));
+      const priciest = withPrices.reduce((a, b) => (Number(a.price) >= Number(b.price) ? a : b));
+      currentPrice = Number(cheapest.price);
+      referencePrice = Number(priciest.price);
+      availability = cheapest.availability ? cheapest.availability.replace("https://schema.org/", "") : null;
+    }
+  } else if (offer) {
+    currentPrice = offer.price != null ? Number(offer.price) : null;
+    referencePrice = currentPrice;
+    availability = offer.availability ? offer.availability.replace("https://schema.org/", "") : null;
   }
 
-  const price = offer && offer.price != null ? Number(offer.price) : null;
-  const availability = offer && offer.availability ? offer.availability.replace("https://schema.org/", "") : null;
-
-  return { price, availability };
+  return { price: currentPrice, availability, currentPrice, referencePrice };
 }
 
 async function runScan(log = console.log) {
@@ -123,7 +143,7 @@ async function runScan(log = console.log) {
       await sleep(REQUEST_DELAY_MS);
       const detail = await fetchItemDetail(item);
       upsertItem({ ...item, classification: detail.classification || null });
-      addSnapshot(item.id, detail.price, detail.availability);
+      addSnapshot(item.id, detail.price, detail.availability, detail.currentPrice, detail.referencePrice);
       ok++;
     } catch (err) {
       failed++;

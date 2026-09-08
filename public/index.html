@@ -135,7 +135,7 @@
     grid.innerHTML = visible
       .map((item) => {
         const badges = [];
-        if (item.onSale) badges.push(`<span class="badge sale">-${item.discountPct}%</span>`);
+        if (item.onSale) badges.push(`<span class="badge sale">Sale -${item.discountPct}%</span>`);
         if (item.newlyAvailable) badges.push(`<span class="badge newly">Neu verfügbar</span>`);
         const priceHtml = item.onSale
           ? `<span class="price on-sale">${fmtMoney(item.price)}</span><span class="baseline">${fmtMoney(item.baselinePrice)}</span>`
