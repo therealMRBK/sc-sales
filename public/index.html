@@ -527,8 +527,11 @@
   }
 
   function fmtPrice(usd) {
+    if (usd == null) return "–";
     const converted = convertPrice(usd);
-    if (converted == null) return "–";
+    // Solange der Wechselkurs noch nicht geladen ist (kurz nach dem
+    // allerersten Start), USD statt eines nutzlosen "–" zeigen.
+    if (converted == null) return fmtUsdRaw(usd);
     const cur = CURRENCIES[currentCurrency];
     return converted.toLocaleString(cur.locale, { style: "currency", currency: cur.code });
   }
