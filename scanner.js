@@ -1,4 +1,6 @@
-const { upsertItem, addSnapshot, setMeta, upsertAnnouncementIfNew, replaceShipsInDevelopment } = require("./db");
+const fs = require("fs");
+const path = require("path");
+const { upsertItem, addSnapshot, setMeta, upsertAnnouncementIfNew, replaceShipsInDevelopment, MEDIA_DIR } = require("./db");
 
 // Deutsche Umsatzsteuer -- RSI ist ein US-Unternehmen, die angezeigten
 // USD-Preise sind Netto-Preise ohne Steuer (in den USA gibt es keine MwSt).
@@ -69,20 +71,37 @@ function extractListingItems(html) {
     const [, id, block] = m;
     const urlMatch = block.match(/href="(\/pledge\/ships\/[^"]+)"/);
     const nameMatch = block.match(/<span class="name trans-02s">([^<]+)/);
+    const focusMatch = block.match(/<span class="focus trans-02s">\s*-\s*([^<]+)<\/span>/);
     const imgMatch = block.match(/<img src="([^"]+)" class="ship/);
     const manufacturerMatch = block.match(/manufacturer spec">Manufacturer\s*:\s*<img[^>]*src="([^"]+)"/);
+    const crewMatch = block.match(/<span class="crew spec">Max Crew \/ Human\s*:\s*<span>([^<]+)<\/span>/);
+    const lengthMatch = block.match(/<span class="length spec">Length \/ Meters\s*:\s*<span>([^<]+)<\/span>/);
+    const massMatch = block.match(/<span class="mass spec">Mass \/ Kg\s*:\s*<span>([^<]+)<\/span>/);
     if (!urlMatch || !nameMatch) continue;
-    const manufacturerLogo = manufacturerMatch
+
+    const manufacturerLogoUrl = manufacturerMatch
       ? manufacturerMatch[1].startsWith("http")
         ? manufacturerMatch[1]
         : "https://robertsspaceindustries.com" + manufacturerMatch[1]
       : null;
+    // Herstellername ist nirgends als Klartext im Listing-Fragment vorhanden,
+    // nur als Logo-Bild -- der Dateiname des Logos IST der Name (z.B.
+    // ".../icon/Kruger.png" -> "Kruger").
+    const manufacturerName = manufacturerLogoUrl
+      ? decodeURIComponent(manufacturerLogoUrl.split("/").pop().replace(/\.[a-zA-Z0-9]+$/, ""))
+      : null;
+
     items.push({
       id,
       url: "https://robertsspaceindustries.com" + urlMatch[1],
       name: nameMatch[1].trim(),
-      image: imgMatch ? imgMatch[1] : null,
-      manufacturer: manufacturerLogo,
+      focus: focusMatch ? focusMatch[1].trim() : null,
+      imageUrlRemote: imgMatch ? imgMatch[1] : null,
+      manufacturerLogoUrlRemote: manufacturerLogoUrl,
+      manufacturerName,
+      crew: crewMatch ? crewMatch[1].trim() : null,
+      lengthM: lengthMatch ? Number(lengthMatch[1]) : null,
+      massKg: massMatch ? Number(massMatch[1]) : null,
     });
   }
   return items;
@@ -121,7 +140,7 @@ async function fetchItemDetail(item) {
       // ignorieren: nicht jedes ld+json-Blob ist gültiges/erwartetes JSON
     }
   }
-  if (!product) return { price: null, availability: null, currentPrice: null, referencePrice: null };
+  if (!product) return { price: null, availability: null, currentPrice: null, referencePrice: null, description: null };
 
   const offer = product.offers;
   let currentPrice = null;
@@ -154,7 +173,28 @@ async function fetchItemDetail(item) {
     availability = offer.availability ? offer.availability.replace("https://schema.org/", "") : null;
   }
 
-  return { price: currentPrice, availability, currentPrice, referencePrice };
+  return { price: currentPrice, availability, currentPrice, referencePrice, description: product.description || null };
+}
+
+// Lädt ein Bild einmalig auf die lokale Platte -- kein Re-Download, wenn die
+// Datei schon existiert (Schiffs-Artwork ändert sich praktisch nie nach
+// Release). So bedient jeder Website-Besucher nur noch unseren eigenen
+// Server, nicht mehr RSIs CDN direkt -- relevant, falls diese Seite mal
+// nennenswerten eigenen Traffic bekommt.
+async function downloadImageIfMissing(url, destPath) {
+  if (!url) return false;
+  if (fs.existsSync(destPath)) return false;
+  await sleep(REQUEST_DELAY_MS); // nur bei echtem Download pausieren, nicht bei Cache-Hits
+  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  if (!res.ok) throw new Error(`Bild-Download fehlgeschlagen (${url}): HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  fs.writeFileSync(destPath, buf);
+  return true;
+}
+
+function extForUrl(url) {
+  const m = url.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
+  return m ? m[1].toLowerCase() : "jpg";
 }
 
 async function runScan(log = console.log) {
@@ -169,7 +209,30 @@ async function runScan(log = console.log) {
     try {
       await sleep(REQUEST_DELAY_MS);
       const detail = await fetchItemDetail(item);
-      upsertItem({ ...item, classification: detail.classification || null });
+
+      // Bilder lokal cachen statt RSIs CDN-URL direkt an Besucher weiterzugeben.
+      const shipImagePath = path.join(MEDIA_DIR, "ships", `${item.id}.${extForUrl(item.imageUrlRemote || "")}`);
+      let shipImageLocalUrl = null;
+      if (item.imageUrlRemote) {
+        await downloadImageIfMissing(item.imageUrlRemote, shipImagePath);
+        shipImageLocalUrl = `/media/ships/${path.basename(shipImagePath)}`;
+      }
+
+      let manufacturerLogoLocalUrl = null;
+      if (item.manufacturerLogoUrlRemote && item.manufacturerName) {
+        const safeName = item.manufacturerName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const logoPath = path.join(MEDIA_DIR, "manufacturers", `${safeName}.${extForUrl(item.manufacturerLogoUrlRemote)}`);
+        await downloadImageIfMissing(item.manufacturerLogoUrlRemote, logoPath);
+        manufacturerLogoLocalUrl = `/media/manufacturers/${path.basename(logoPath)}`;
+      }
+
+      upsertItem({
+        ...item,
+        image: shipImageLocalUrl,
+        manufacturer: manufacturerLogoLocalUrl,
+        classification: detail.classification || null,
+        description: detail.description,
+      });
       addSnapshot(item.id, detail.price, detail.availability, detail.currentPrice, detail.referencePrice);
       ok++;
     } catch (err) {
@@ -268,19 +331,24 @@ async function scanShipsInDevelopment(log = console.log) {
 // Kostenloser ECB-Referenzkurs (Frankfurter API, kein Key nötig) --
 // aktualisiert einmal täglich, reicht für Preisanzeige völlig aus. RSI
 // selbst würde beim tatsächlichen Checkout ggf. leicht abweichend runden.
+// EUR und GBP in einem Request, fürs Frontend-Preis-/Sprach-Umschalten
+// (Deutschland/UK -- RSIs eigener Store unterstützt genau diese Währungen
+// plus USD/CAD, siehe store.js).
 async function scanExchangeRate(log = console.log) {
-  const res = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR", {
+  const res = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,GBP", {
     headers: { "User-Agent": USER_AGENT },
   });
   if (!res.ok) throw new Error(`Wechselkurs-Abruf fehlgeschlagen: HTTP ${res.status}`);
   const data = await res.json();
-  const rate = data.rates && data.rates.EUR;
-  if (!rate) throw new Error("Wechselkurs-Antwort ohne EUR-Rate");
+  const eur = data.rates && data.rates.EUR;
+  const gbp = data.rates && data.rates.GBP;
+  if (!eur || !gbp) throw new Error("Wechselkurs-Antwort ohne EUR/GBP-Rate");
 
-  setMeta("usd_eur_rate", rate);
+  setMeta("usd_eur_rate", eur);
+  setMeta("usd_gbp_rate", gbp);
   setMeta("usd_eur_rate_at", new Date().toISOString());
-  log(`[fx] 1 USD = ${rate} EUR`);
-  return rate;
+  log(`[fx] 1 USD = ${eur} EUR = ${gbp} GBP`);
+  return { eur, gbp };
 }
 
 module.exports = { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE };

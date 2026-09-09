@@ -3,7 +3,10 @@ const fs = require("fs");
 const Database = require("better-sqlite3");
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+const MEDIA_DIR = path.join(DATA_DIR, "media");
 fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(path.join(MEDIA_DIR, "ships"), { recursive: true });
+fs.mkdirSync(path.join(MEDIA_DIR, "manufacturers"), { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, "sc-sales.sqlite"));
 db.pragma("journal_mode = WAL");
@@ -56,18 +59,59 @@ db.exec(`
   );
 `);
 
+// Nachträglich ergänzte Spalten für den lokalen Store-Mirror (Beschreibung,
+// Specs, Herstellername) -- SQLite kennt kein "ADD COLUMN IF NOT EXISTS",
+// daher erst den IST-Stand prüfen und nur fehlende Spalten ergänzen. So
+// bleibt die bestehende Preis-Historie beim Deploy erhalten, keine
+// Notwendigkeit die DB zu leeren.
+const existingItemColumns = new Set(db.prepare("PRAGMA table_info(items)").all().map((c) => c.name));
+const itemColumnsToAdd = {
+  description: "TEXT",
+  manufacturer_name: "TEXT",
+  focus: "TEXT",
+  crew: "TEXT",
+  length_m: "REAL",
+  mass_kg: "REAL",
+};
+for (const [col, type] of Object.entries(itemColumnsToAdd)) {
+  if (!existingItemColumns.has(col)) {
+    db.exec(`ALTER TABLE items ADD COLUMN ${col} ${type}`);
+  }
+}
+
 function upsertItem(item) {
   const now = new Date().toISOString();
   const existing = db.prepare("SELECT id FROM items WHERE id = ?").get(item.id);
+  const fields = {
+    name: item.name,
+    url: item.url,
+    manufacturer: item.manufacturer,
+    image: item.image,
+    classification: item.classification,
+    description: item.description ?? null,
+    manufacturer_name: item.manufacturerName ?? null,
+    focus: item.focus ?? null,
+    crew: item.crew ?? null,
+    length_m: item.lengthM ?? null,
+    mass_kg: item.massKg ?? null,
+  };
   if (existing) {
     db.prepare(
-      `UPDATE items SET name=?, url=?, manufacturer=?, image=?, classification=?, last_seen_at=? WHERE id=?`
-    ).run(item.name, item.url, item.manufacturer, item.image, item.classification, now, item.id);
+      `UPDATE items SET name=?, url=?, manufacturer=?, image=?, classification=?, description=?, manufacturer_name=?, focus=?, crew=?, length_m=?, mass_kg=?, last_seen_at=? WHERE id=?`
+    ).run(
+      fields.name, fields.url, fields.manufacturer, fields.image, fields.classification,
+      fields.description, fields.manufacturer_name, fields.focus, fields.crew, fields.length_m, fields.mass_kg,
+      now, item.id
+    );
   } else {
     db.prepare(
-      `INSERT INTO items (id, name, url, manufacturer, image, classification, first_seen_at, last_seen_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(item.id, item.name, item.url, item.manufacturer, item.image, item.classification, now, now);
+      `INSERT INTO items (id, name, url, manufacturer, image, classification, description, manufacturer_name, focus, crew, length_m, mass_kg, first_seen_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      item.id, fields.name, fields.url, fields.manufacturer, fields.image, fields.classification,
+      fields.description, fields.manufacturer_name, fields.focus, fields.crew, fields.length_m, fields.mass_kg,
+      now, now
+    );
   }
 }
 
@@ -335,12 +379,17 @@ function getStats() {
 }
 
 function getExchangeRate() {
-  const rate = getMeta("usd_eur_rate");
-  return rate ? { usdToEur: Number(rate), updatedAt: getMeta("usd_eur_rate_at") } : null;
+  const eur = getMeta("usd_eur_rate");
+  const gbp = getMeta("usd_gbp_rate");
+  return eur && gbp
+    ? { usdToEur: Number(eur), usdToGbp: Number(gbp), updatedAt: getMeta("usd_eur_rate_at") }
+    : null;
 }
 
 module.exports = {
   db,
+  DATA_DIR,
+  MEDIA_DIR,
   upsertItem,
   addSnapshot,
   setMeta,

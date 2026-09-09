@@ -9,6 +9,7 @@ const {
   getItemHistory,
   getStats,
   getExchangeRate,
+  MEDIA_DIR,
 } = require("./db");
 const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const RECURRING_EVENTS = require("./events");
@@ -20,6 +21,9 @@ const FX_INTERVAL_HOURS = Number(process.env.FX_INTERVAL_HOURS || 24);
 
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
+// Lokal gecachtes Schiffs-Artwork + Hersteller-Logos -- Besucher laden das
+// von uns, nicht von RSIs CDN (siehe scanner.js: downloadImageIfMissing).
+app.use("/media", express.static(MEDIA_DIR, { maxAge: "30d", immutable: true }));
 
 app.get("/healthz", (req, res) => res.send("ok"));
 
@@ -50,8 +54,14 @@ app.get("/api/status", (req, res) => {
     lastScanOk: Number(getMeta("last_scan_ok") || 0),
     lastScanFailed: Number(getMeta("last_scan_failed") || 0),
     scanIntervalMinutes: SCAN_INTERVAL_MINUTES,
-    fxRate: fx ? fx.usdToEur : null,
+    // Roh-Kurse (USD-Basis) fürs Frontend -- Preis-/Währungsumschalten
+    // (USD/EUR/GBP) rechnet clientseitig direkt aus den USD-Rohwerten der
+    // Items, damit ein Wechsel sofort greift statt einen neuen /api/items-
+    // Request zu brauchen.
+    fxRates: fx ? { eur: fx.usdToEur, gbp: fx.usdToGbp } : null,
     fxRateUpdatedAt: fx ? fx.updatedAt : null,
+    // Rückwärtskompatibel für ältere Frontend-Versionen / andere Konsumenten:
+    fxRate: fx ? fx.usdToEur : null,
     germanVatRate: GERMAN_VAT_RATE,
   });
 });

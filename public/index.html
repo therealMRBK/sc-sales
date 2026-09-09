@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Star Citizen Store-Sales</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000b18'/%3E%3Cpath d='M16 4 L26 16 L16 28 L6 16 Z' fill='%2343edf8'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Electrolize&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
@@ -33,25 +34,38 @@
     --font-mono: "Share Tech Mono", monospace;
   }
   * { box-sizing: border-box; }
+  @keyframes bgshift {
+    0%, 100% { background-position: 50% 0%; }
+    50% { background-position: 50% 14%; }
+  }
   body {
     margin: 0;
     background: var(--bg);
     background-image: radial-gradient(ellipse at top, #051a2e 0%, var(--bg) 60%);
+    background-size: 100% 160%;
+    animation: bgshift 50s ease-in-out infinite;
     color: var(--text);
     font-family: var(--font-body);
   }
   ::selection { background: var(--cyan); color: #000; }
 
-  .clip {
-    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--border-dim); border-top-color: var(--cyan);
+    animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px;
   }
 
+  #topbar { position: sticky; top: 0; z-index: 20; background: var(--bg); box-shadow: 0 2px 20px rgba(0,0,0,0.4); }
+
   header {
-    padding: 22px 28px 16px;
+    padding: 18px 28px 14px;
     border-bottom: 1px solid var(--border-dim);
     background: linear-gradient(180deg, rgba(10, 86, 136, 0.12), transparent);
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;
   }
-  header h1 {
+  header .headline h1 {
     margin: 0 0 6px;
     font-family: var(--font-head);
     font-weight: 700;
@@ -66,7 +80,17 @@
   #status { margin-top: 10px; font-size: 11px; color: var(--cyan-dim); font-family: var(--font-mono); letter-spacing: 0.5px; }
   #fx-note { margin-top: 4px; font-size: 10px; color: var(--muted); font-family: var(--font-mono); letter-spacing: 0.3px; max-width: 900px; }
 
-  #tabs { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border-dim); }
+  #prefs { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pref-group { display: flex; border: 1px solid var(--border-dim); }
+  .pref-group button {
+    background: var(--panel); border: none; border-right: 1px solid var(--border-dim); color: var(--muted);
+    padding: 6px 12px; cursor: pointer; font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
+  }
+  .pref-group button:last-child { border-right: none; }
+  .pref-group button.active { color: var(--cyan); background: rgba(67,237,248,0.1); }
+  .pref-group button:hover { color: var(--text-bright); }
+
+  #tabs { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border-dim); background: var(--bg); }
   #tabs button {
     background: none; border: none; color: var(--muted); font-family: var(--font-head);
     font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
@@ -107,9 +131,10 @@
     display: flex;
     flex-direction: column;
     cursor: pointer;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    animation: fadeIn 0.35s ease;
   }
-  .card:hover { border-color: var(--cyan-dim); box-shadow: 0 0 16px rgba(67,237,248,0.15); }
+  .card:hover { border-color: var(--cyan-dim); box-shadow: 0 0 18px rgba(67,237,248,0.2); transform: translateY(-2px); }
   .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; display: block; }
   .card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 7px; }
   .card .name { font-family: var(--font-head); font-weight: 700; font-size: 13px; letter-spacing: 0.5px; color: var(--text-bright); }
@@ -155,6 +180,7 @@
   .cal-item {
     background: var(--panel); border: 1px solid var(--border-dim);
     padding: 10px 14px; display: flex; flex-direction: column; gap: 5px;
+    animation: fadeIn 0.3s ease;
   }
   .cal-item .top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .cal-item .title { font-family: var(--font-head); font-weight: 700; font-size: 13px; color: var(--text-bright); }
@@ -165,7 +191,7 @@
   .cal-hint { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
 
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
-  .stat-card { background: var(--panel); border: 1px solid var(--border-dim); padding: 16px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--border-dim); padding: 16px; animation: fadeIn 0.3s ease; }
   .stat-card .label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
   .stat-card .value { font-family: var(--font-mono); font-size: 22px; color: var(--cyan); font-weight: 700; }
   .stat-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
@@ -179,9 +205,12 @@
   #detail-panel {
     background: var(--panel); border: 1px solid var(--cyan-dim); max-width: 640px; width: 100%;
     max-height: 90vh; overflow-y: auto; box-shadow: 0 0 40px rgba(67,237,248,0.15);
+    animation: fadeIn 0.2s ease;
   }
-  #detail-panel img { width: 100%; aspect-ratio: 21/9; object-fit: cover; display: block; }
-  #detail-body { padding: 20px 24px 26px; }
+  #detail-body > img { width: 100%; aspect-ratio: 21/9; object-fit: cover; display: block; }
+  #detail-body-inner { padding: 20px 24px 26px; }
+  .detail-specs, .detail-focus { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .detail-description { font-size: 13px; color: var(--text); line-height: 1.5; margin: 10px 0; white-space: pre-line; }
   #detail-body h2 { font-family: var(--font-head); font-size: 18px; letter-spacing: 1px; color: var(--text-bright); margin: 0 0 4px; }
   #detail-body .close { float: right; background: none; border: 1px solid var(--border-dim); color: var(--muted); cursor: pointer; padding: 4px 10px; font-size: 12px; }
   #detail-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 16px 0; }
@@ -194,129 +223,428 @@
   #history-list .row .t { color: var(--muted); }
   .store-link { display: inline-block; margin-top: 14px; color: var(--cyan); font-size: 12px; text-decoration: none; letter-spacing: 1px; text-transform: uppercase; }
   .store-link:hover { text-decoration: underline; }
+
+  /* Toast (neuer Sale erkannt) */
+  #toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+  .toast {
+    background: var(--panel); border: 1px solid var(--amber); box-shadow: 0 0 20px rgba(224,132,0,0.3);
+    padding: 12px 16px; max-width: 280px; font-size: 12px; animation: toastIn 0.3s ease;
+  }
+  .toast .t-title { color: var(--amber-bright); font-family: var(--font-head); font-size: 11px; letter-spacing: 1px; margin-bottom: 4px; }
 </style>
 </head>
 <body>
-<header>
-  <h1><span>&#9670;</span> Star Citizen — Store Sales</h1>
-  <p>Beobachtet den RSI Pledge-Store und markiert Preissenkungen &amp; neu verfügbare Schiffe.</p>
-  <div id="status">lädt…</div>
-  <div id="fx-note">lädt…</div>
-</header>
-<div id="tabs">
-  <button data-tab="sales" class="active">Sales</button>
-  <button data-tab="calendar">Kalender</button>
-  <button data-tab="stats">Statistiken</button>
+<div id="topbar">
+  <header>
+    <div class="headline">
+      <h1><span>&#9670;</span> Star Citizen — Store Sales</h1>
+      <p id="subtitle"></p>
+      <div id="status">…</div>
+      <div id="fx-note">…</div>
+    </div>
+    <div id="prefs">
+      <div class="pref-group" id="lang-switch">
+        <button data-lang="de">DE</button>
+        <button data-lang="en">EN</button>
+      </div>
+      <div class="pref-group" id="currency-switch">
+        <button data-currency="usd">USD</button>
+        <button data-currency="eur">EUR</button>
+        <button data-currency="gbp">GBP</button>
+      </div>
+    </div>
+  </header>
+  <div id="tabs">
+    <button data-tab="sales" class="active"></button>
+    <button data-tab="calendar"></button>
+    <button data-tab="stats"></button>
+  </div>
 </div>
 <div class="toolbar" id="toolbar">
-  <button class="pillbtn active" data-filter="sale">Nur Sales</button>
-  <button class="pillbtn" data-filter="all">Alle Items</button>
-  <input type="text" id="search" placeholder="Schiff suchen…" />
-  <select id="sort">
-    <option value="name">Name (A-Z)</option>
-    <option value="price_asc">Preis (aufsteigend)</option>
-    <option value="price_desc">Preis (absteigend)</option>
-    <option value="discount">Größter Rabatt</option>
-  </select>
+  <button class="pillbtn active" data-filter="sale"></button>
+  <button class="pillbtn" data-filter="all"></button>
+  <input type="text" id="search" />
+  <select id="sort"></select>
 </div>
 <div id="grid"></div>
-<div id="empty" hidden>Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.</div>
+<div id="empty" hidden></div>
 
 <div id="calendar">
   <div id="cal-subtabs">
-    <button class="cal-subtab active" data-calsub="recurring">Events</button>
-    <button class="cal-subtab" data-calsub="announcements">Ankündigungen</button>
-    <button class="cal-subtab" data-calsub="ships">Schiffe in Entwicklung</button>
+    <button class="cal-subtab active" data-calsub="recurring"></button>
+    <button class="cal-subtab" data-calsub="announcements"></button>
+    <button class="cal-subtab" data-calsub="ships"></button>
   </div>
   <div class="cal-section active" data-calpanel="recurring">
-    <h2>Nächste erwartete Events</h2>
-    <p class="cal-hint">Basiert auf dem üblichen Muster vergangener Jahre — RSI legt den genauen Termin erst kurz vorher offiziell fest. Sobald eine passende Ankündigung erkannt wird, taucht sie unter "Ankündigungen" mit echtem Link auf.</p>
+    <h2 id="cal-recurring-title"></h2>
+    <p class="cal-hint" id="cal-recurring-hint"></p>
     <div class="cal-list" id="cal-recurring"></div>
   </div>
   <div class="cal-section" data-calpanel="announcements">
-    <h2>Aktuelle Ankündigungen (RSI Comm-Link)</h2>
-    <p class="cal-hint">Automatisch erkannte News-Artikel, rot markiert wenn sie zu einem bekannten Event passen.</p>
+    <h2 id="cal-announcements-title"></h2>
+    <p class="cal-hint" id="cal-announcements-hint"></p>
     <div class="cal-list" id="cal-announcements"></div>
   </div>
   <div class="cal-section" data-calpanel="ships">
-    <h2>Schiffe in Entwicklung</h2>
-    <p class="cal-hint">Aus RSIs eigener Ship-Matrix — nur Status, kein Termin. RSI veröffentlicht keine verbindlichen Release-Daten für Schiffe in Entwicklung.</p>
+    <h2 id="cal-ships-title"></h2>
+    <p class="cal-hint" id="cal-ships-hint"></p>
     <div class="cal-list" id="cal-ships"></div>
   </div>
 </div>
 
 <div id="stats-view">
   <div class="stats-section">
-    <h2>Flotte im Überblick</h2>
+    <h2 id="stats-title"></h2>
     <div class="stat-grid" id="stat-grid"></div>
   </div>
 </div>
 
 <div id="overlay">
   <div id="detail-panel">
-    <div id="detail-body">lädt…</div>
+    <div id="detail-body"></div>
   </div>
 </div>
 
+<div id="toasts"></div>
+
 <script>
+  // ---------------------------------------------------------------------
+  // i18n
+  // ---------------------------------------------------------------------
+  const TRANSLATIONS = {
+    de: {
+      subtitle: "Beobachtet den RSI Pledge-Store und markiert Preissenkungen & neu verfügbare Schiffe.",
+      tab_sales: "Sales",
+      tab_calendar: "Kalender",
+      tab_stats: "Statistiken",
+      filter_sale: "Nur Sales",
+      filter_all: "Alle Items",
+      search_placeholder: "Schiff suchen…",
+      sort_name: "Name (A-Z)",
+      sort_price_asc: "Preis (aufsteigend)",
+      sort_price_desc: "Preis (absteigend)",
+      sort_discount: "Größter Rabatt",
+      badge_sale: "Sale -{pct}%",
+      badge_newly: "Neu verfügbar",
+      store_credit_prefix: "Warbond-Preis oben · ",
+      store_credit: "Store Credit: {price}",
+      unavailable: "aktuell nicht einzeln kaufbar",
+      empty_sales: "Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.",
+      rsi_display: "{price} (RSI-Anzeige)",
+      loading: "Lädt…",
+      status_last_scan: "LETZTER SCAN: {rel}",
+      status_ok_failed: " ({ok} OK{failedPart})",
+      status_failed_part: ", {n} FEHLER",
+      status_interval: " · INTERVALL: {n}MIN",
+      status_unreachable: "STATUS NICHT ERREICHBAR",
+      fx_note: "PREISE INKL. {vat}% {country}-STEUER — GESCHÄTZT AUS USD-PREIS × WECHSELKURS (1 USD = {rate} {code}, STAND {rel}). KEINE VON RSI ÜBERNOMMENE ZAHL — RSI ZEIGT LOKALE PREISE NUR EINGELOGGT AN.",
+      fx_note_usd: "USD-PREISE WIE VON RSI ANGEZEIGT, OHNE STEUER (RSI IST EIN US-UNTERNEHMEN).",
+      fx_loading: "WECHSELKURS WIRD NOCH GELADEN…",
+      cal_events_tab: "Events",
+      cal_announcements_tab: "Ankündigungen",
+      cal_ships_tab: "Schiffe in Entwicklung",
+      cal_recurring_title: "Nächste erwartete Events",
+      cal_recurring_hint: "Basiert auf dem üblichen Muster vergangener Jahre — RSI legt den genauen Termin erst kurz vorher offiziell fest. Sobald eine passende Ankündigung erkannt wird, taucht sie unter \"Ankündigungen\" mit echtem Link auf.",
+      cal_announcements_title: "Aktuelle Ankündigungen (RSI Comm-Link)",
+      cal_announcements_hint: "Automatisch erkannte News-Artikel, rot markiert wenn sie zu einem bekannten Event passen.",
+      cal_announcements_empty: "Noch keine Ankündigungen gesammelt — baut sich mit jedem Scan auf.",
+      cal_ships_title: "Schiffe in Entwicklung",
+      cal_ships_hint: "Aus RSIs eigener Ship-Matrix — nur Status, kein Termin. RSI veröffentlicht keine verbindlichen Release-Daten für Schiffe in Entwicklung.",
+      cal_ships_empty: "Noch nicht geladen.",
+      cal_days_until: "in {n} Tagen",
+      cal_expected: "(erwartet)",
+      cal_major_sale: "Großer Sale",
+      cal_minor_sale: "Kein großer Sale",
+      cal_article_link: "Artikel öffnen →",
+      cal_more_info: "Mehr erfahren →",
+      cal_in_concept: "In Konzept",
+      stats_title: "Flotte im Überblick",
+      stats_no_data: "Noch keine Daten — erster Scan läuft noch.",
+      stat_tracked_items: "Getrackte Items",
+      stat_on_sale: "Aktuell im Sale",
+      stat_fleet_value: "Gesamtwert Flotte",
+      stat_fleet_value_sub: "Summe aller aktuellen Preise",
+      stat_avg_price: "Ø-Preis",
+      stat_cheapest: "Günstigstes Schiff",
+      stat_priciest: "Teuerstes Schiff",
+      stat_biggest_discount: "Größter Rabatt gerade",
+      stat_price_changes: "Preisänderungen getrackt",
+      stat_announcements: "Ankündigungen getrackt",
+      stat_tax_label: "Preise inkl. Steuer",
+      stat_tax_sub: "Geschätzt aus USD × Wechselkurs, keine RSI-Zahl",
+      detail_close: "✕ Schließen",
+      detail_tracked_since: "Getrackt seit {date}",
+      detail_no_history: "Noch keine Historie",
+      detail_current_price: "Aktueller Preis",
+      detail_all_time_low: "Allzeit-Tief",
+      detail_all_time_high: "Allzeit-Hoch",
+      detail_price_changes: "Preisänderungen",
+      detail_store_credit: "Store Credit",
+      detail_specs_crew: "Crew",
+      detail_specs_length: "Länge",
+      detail_specs_mass: "Masse",
+      detail_no_chart: "Noch keine Preis-Historie.",
+      detail_not_purchasable: " · nicht kaufbar",
+      detail_open_store: "Im RSI-Store öffnen →",
+      toast_title: "NEUER SALE",
+      toast_body: "{name} — jetzt {pct}% günstiger",
+      relative_never: "noch nie",
+      relative_now: "gerade eben",
+      relative_min: "vor {n} Min.",
+      relative_hours: "vor {n} Std.",
+      relative_days: "vor {n} Tagen",
+    },
+    en: {
+      subtitle: "Watches the RSI pledge store and flags price drops & newly available ships.",
+      tab_sales: "Sales",
+      tab_calendar: "Calendar",
+      tab_stats: "Stats",
+      filter_sale: "Sales only",
+      filter_all: "All items",
+      search_placeholder: "Search ship…",
+      sort_name: "Name (A-Z)",
+      sort_price_asc: "Price (low to high)",
+      sort_price_desc: "Price (high to low)",
+      sort_discount: "Biggest discount",
+      badge_sale: "Sale -{pct}%",
+      badge_newly: "Newly available",
+      store_credit_prefix: "Warbond price above · ",
+      store_credit: "Store Credit: {price}",
+      unavailable: "not currently purchasable standalone",
+      empty_sales: "No sales detected right now — the first scan has no price history to compare against yet.",
+      rsi_display: "{price} (RSI listing)",
+      loading: "Loading…",
+      status_last_scan: "LAST SCAN: {rel}",
+      status_ok_failed: " ({ok} OK{failedPart})",
+      status_failed_part: ", {n} FAILED",
+      status_interval: " · INTERVAL: {n}MIN",
+      status_unreachable: "STATUS UNREACHABLE",
+      fx_note: "PRICES INCL. {vat}% {country} TAX — ESTIMATED FROM USD PRICE × EXCHANGE RATE (1 USD = {rate} {code}, AS OF {rel}). NOT A FIGURE SOURCED FROM RSI — RSI ONLY SHOWS LOCAL PRICES WHEN LOGGED IN.",
+      fx_note_usd: "USD PRICES AS SHOWN BY RSI, NO TAX (RSI IS A US COMPANY).",
+      fx_loading: "LOADING EXCHANGE RATE…",
+      cal_events_tab: "Events",
+      cal_announcements_tab: "Announcements",
+      cal_ships_tab: "Ships in development",
+      cal_recurring_title: "Next expected events",
+      cal_recurring_hint: "Based on the usual pattern from past years — RSI only confirms the exact date shortly beforehand. Once a matching announcement is detected, it appears under \"Announcements\" with a real link.",
+      cal_announcements_title: "Recent announcements (RSI Comm-Link)",
+      cal_announcements_hint: "Automatically detected news articles, highlighted in red when they match a known event.",
+      cal_announcements_empty: "No announcements collected yet — builds up with every scan.",
+      cal_ships_title: "Ships in development",
+      cal_ships_hint: "From RSI's own ship matrix — status only, no date. RSI doesn't publish committed release dates for ships in development.",
+      cal_ships_empty: "Not loaded yet.",
+      cal_days_until: "in {n} days",
+      cal_expected: "(expected)",
+      cal_major_sale: "Major sale",
+      cal_minor_sale: "No major sale",
+      cal_article_link: "Open article →",
+      cal_more_info: "Learn more →",
+      cal_in_concept: "In concept",
+      stats_title: "Fleet overview",
+      stats_no_data: "No data yet — first scan still running.",
+      stat_tracked_items: "Tracked items",
+      stat_on_sale: "Currently on sale",
+      stat_fleet_value: "Total fleet value",
+      stat_fleet_value_sub: "Sum of all current prices",
+      stat_avg_price: "Avg. price",
+      stat_cheapest: "Cheapest ship",
+      stat_priciest: "Most expensive ship",
+      stat_biggest_discount: "Biggest discount right now",
+      stat_price_changes: "Price changes tracked",
+      stat_announcements: "Announcements tracked",
+      stat_tax_label: "Prices incl. tax",
+      stat_tax_sub: "Estimated from USD × exchange rate, not an RSI figure",
+      detail_close: "✕ Close",
+      detail_tracked_since: "Tracked since {date}",
+      detail_no_history: "No history yet",
+      detail_current_price: "Current price",
+      detail_all_time_low: "All-time low",
+      detail_all_time_high: "All-time high",
+      detail_price_changes: "Price changes",
+      detail_store_credit: "Store Credit",
+      detail_specs_crew: "Crew",
+      detail_specs_length: "Length",
+      detail_specs_mass: "Mass",
+      detail_no_chart: "No price history yet.",
+      detail_not_purchasable: " · not purchasable",
+      detail_open_store: "Open in RSI store →",
+      toast_title: "NEW SALE",
+      toast_body: "{name} — now {pct}% cheaper",
+      relative_never: "never",
+      relative_now: "just now",
+      relative_min: "{n} min. ago",
+      relative_hours: "{n} hr. ago",
+      relative_days: "{n} days ago",
+    },
+  };
+
+  function loadPref(key, fallback) {
+    try {
+      return localStorage.getItem(key) || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  function savePref(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // localStorage blockiert (privates Fenster o.ä.) -- Auswahl gilt nur für diese Sitzung
+    }
+  }
+
+  let lang = loadPref("sc-sales-lang", "de");
+  let currentCurrency = loadPref("sc-sales-currency", "eur");
+
+  function t(key, params) {
+    let str = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || TRANSLATIONS.de[key] || key;
+    if (params) {
+      for (const [k, v] of Object.entries(params)) str = str.replace(`{${k}}`, v);
+    }
+    return str;
+  }
+
+  // ---------------------------------------------------------------------
+  // Währungen -- Roh-USD-Preise werden clientseitig umgerechnet, damit ein
+  // Wechsel sofort greift statt einen neuen /api/items-Request zu brauchen.
+  // ---------------------------------------------------------------------
+  const CURRENCIES = {
+    usd: { code: "USD", locale: "en-US", vat: 0, country: "US" },
+    eur: { code: "EUR", locale: "de-DE", vat: 0.19, country: "DE" },
+    gbp: { code: "GBP", locale: "en-GB", vat: 0.2, country: "UK" },
+  };
+  let fxRates = null; // { eur, gbp } -- USD-Basis
+
+  function convertPrice(usd) {
+    if (usd == null) return null;
+    const cur = CURRENCIES[currentCurrency];
+    if (cur.code === "USD") return usd;
+    if (!fxRates) return null;
+    const rate = cur.code === "EUR" ? fxRates.eur : fxRates.gbp;
+    if (!rate) return null;
+    return usd * rate * (1 + cur.vat);
+  }
+
+  function fmtPrice(usd) {
+    const converted = convertPrice(usd);
+    if (converted == null) return "–";
+    const cur = CURRENCIES[currentCurrency];
+    return converted.toLocaleString(cur.locale, { style: "currency", currency: cur.code });
+  }
+
+  function fmtUsdRaw(usd) {
+    if (usd == null) return "–";
+    return usd.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  }
+
+  // ---------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------
   let lastScanAt = null;
   let filter = "sale";
   let sortMode = "name";
   let searchTerm = "";
   let activeTab = "sales";
   let allItems = [];
-
-  function fmtMoney(v) {
-    if (v == null) return "–";
-    return "$" + v.toFixed(2);
-  }
-
-  function fmtEur(v) {
-    if (v == null) return "–";
-    return v.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
-  }
+  let knownSaleIds = new Set();
+  let firstItemsLoad = true;
 
   function fmtRelative(iso) {
-    if (!iso) return "noch nie";
+    if (!iso) return t("relative_never");
     const diffMs = Date.now() - new Date(iso).getTime();
     const mins = Math.round(diffMs / 60000);
-    if (mins < 1) return "gerade eben";
-    if (mins < 60) return `vor ${mins} Min.`;
+    if (mins < 1) return t("relative_now");
+    if (mins < 60) return t("relative_min", { n: mins });
     const hours = Math.round(mins / 60);
-    if (hours < 24) return `vor ${hours} Std.`;
-    return `vor ${Math.round(hours / 24)} Tagen`;
+    if (hours < 24) return t("relative_hours", { n: hours });
+    return t("relative_days", { n: Math.round(hours / 24) });
   }
 
   function fmtDate(iso) {
-    return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" });
+    return new Date(iso).toLocaleDateString(lang === "en" ? "en-US" : "de-DE", { day: "2-digit", month: "short", year: "numeric" });
   }
 
+  // ---------------------------------------------------------------------
+  // Statische Texte anwenden (bei Sprachwechsel neu aufgerufen)
+  // ---------------------------------------------------------------------
+  function applyStaticText() {
+    document.getElementById("subtitle").textContent = t("subtitle");
+    document.querySelector('#tabs button[data-tab="sales"]').textContent = t("tab_sales");
+    document.querySelector('#tabs button[data-tab="calendar"]').textContent = t("tab_calendar");
+    document.querySelector('#tabs button[data-tab="stats"]').textContent = t("tab_stats");
+    document.querySelector('.pillbtn[data-filter="sale"]').textContent = t("filter_sale");
+    document.querySelector('.pillbtn[data-filter="all"]').textContent = t("filter_all");
+    document.getElementById("search").placeholder = t("search_placeholder");
+    document.getElementById("sort").innerHTML = `
+      <option value="name">${t("sort_name")}</option>
+      <option value="price_asc">${t("sort_price_asc")}</option>
+      <option value="price_desc">${t("sort_price_desc")}</option>
+      <option value="discount">${t("sort_discount")}</option>
+    `;
+    document.getElementById("sort").value = sortMode;
+    document.getElementById("empty").textContent = t("empty_sales");
+    document.querySelector('.cal-subtab[data-calsub="recurring"]').textContent = t("cal_events_tab");
+    document.querySelector('.cal-subtab[data-calsub="announcements"]').textContent = t("cal_announcements_tab");
+    document.querySelector('.cal-subtab[data-calsub="ships"]').textContent = t("cal_ships_tab");
+    document.getElementById("cal-recurring-title").textContent = t("cal_recurring_title");
+    document.getElementById("cal-recurring-hint").textContent = t("cal_recurring_hint");
+    document.getElementById("cal-announcements-title").textContent = t("cal_announcements_title");
+    document.getElementById("cal-announcements-hint").textContent = t("cal_announcements_hint");
+    document.getElementById("cal-ships-title").textContent = t("cal_ships_title");
+    document.getElementById("cal-ships-hint").textContent = t("cal_ships_hint");
+    document.getElementById("stats-title").textContent = t("stats_title");
+    document.documentElement.lang = lang;
+
+    document.querySelectorAll("#lang-switch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === lang));
+    document.querySelectorAll("#currency-switch button").forEach((b) => b.classList.toggle("active", b.dataset.currency === currentCurrency));
+  }
+
+  // ---------------------------------------------------------------------
+  // Status / FX
+  // ---------------------------------------------------------------------
   async function pollStatus() {
     try {
       const res = await fetch("/api/status");
       const status = await res.json();
+      const failedPart = status.lastScanFailed ? t("status_failed_part", { n: status.lastScanFailed }) : "";
       document.getElementById("status").textContent =
-        `LETZTER SCAN: ${fmtRelative(status.lastScanAt)}`.toUpperCase() +
-        (status.lastScanAt ? ` (${status.lastScanOk} OK${status.lastScanFailed ? ", " + status.lastScanFailed + " FEHLER" : ""})` : "") +
-        ` · INTERVALL: ${status.scanIntervalMinutes}MIN`;
+        t("status_last_scan", { rel: fmtRelative(status.lastScanAt).toUpperCase() }) +
+        (status.lastScanAt ? t("status_ok_failed", { ok: status.lastScanOk, failedPart }) : "") +
+        t("status_interval", { n: status.scanIntervalMinutes });
+
       const fxNote = document.getElementById("fx-note");
-      if (status.fxRate) {
-        fxNote.textContent =
-          `PREISE IN € INKL. ${Math.round(status.germanVatRate * 100)}% DT. MWST. — GESCHÄTZT AUS USD-PREIS × ` +
-          `WECHSELKURS (1 USD = ${status.fxRate.toFixed(4)} €, STAND ${fmtRelative(status.fxRateUpdatedAt)}). ` +
-          `KEINE VON RSI ÜBERNOMMENE ZAHL — RSI ZEIGT EUR-PREISE NUR EINGELOGGT AN.`;
+      fxRates = status.fxRates || null;
+      const cur = CURRENCIES[currentCurrency];
+      if (cur.code === "USD") {
+        fxNote.textContent = t("fx_note_usd");
+      } else if (fxRates) {
+        const rate = cur.code === "EUR" ? fxRates.eur : fxRates.gbp;
+        fxNote.textContent = t("fx_note", {
+          vat: Math.round(cur.vat * 100),
+          country: cur.country,
+          rate: rate.toFixed(4),
+          code: cur.code,
+          rel: fmtRelative(status.fxRateUpdatedAt),
+        });
       } else {
-        fxNote.textContent = "WECHSELKURS WIRD NOCH GELADEN…";
+        fxNote.textContent = t("fx_loading");
       }
+
       if (status.lastScanAt !== lastScanAt) {
         lastScanAt = status.lastScanAt;
         loadItems();
+      } else if (activeTab === "sales") {
+        render(); // Preise/Relativzeiten neu rendern falls sich fx/rel geändert hat
       }
     } catch (e) {
-      document.getElementById("status").textContent = "STATUS NICHT ERREICHBAR";
+      document.getElementById("status").textContent = t("status_unreachable");
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Sales-Grid
+  // ---------------------------------------------------------------------
   function applyFilters(items) {
     let result = filter === "sale" ? items.filter((i) => i.onSale || i.newlyAvailable) : items.slice();
     if (searchTerm) {
@@ -354,18 +682,21 @@
     grid.innerHTML = visible
       .map((item) => {
         const badges = [];
-        if (item.onSale) badges.push(`<span class="badge sale">Sale -${item.discountPct}%</span>`);
-        if (item.newlyAvailable) badges.push(`<span class="badge newly">Neu verfügbar</span>`);
+        if (item.onSale) badges.push(`<span class="badge sale">${t("badge_sale", { pct: item.discountPct })}</span>`);
+        if (item.newlyAvailable) badges.push(`<span class="badge newly">${t("badge_newly")}</span>`);
         const isWarbondSale = item.saleType === "listed_discount";
         const priceHtml = item.onSale
-          ? `<span class="price on-sale">${fmtEur(item.priceEurInclVat)}</span><span class="baseline">${fmtEur(item.baselinePriceEurInclVat)}</span>`
-          : `<span class="price">${fmtEur(item.priceEurInclVat)}</span>`;
+          ? `<span class="price on-sale">${fmtPrice(item.price)}</span><span class="baseline">${fmtPrice(item.baselinePrice)}</span>`
+          : `<span class="price">${fmtPrice(item.price)}</span>`;
         const storeCreditHtml =
-          item.storeCreditPriceEurInclVat != null
-            ? `<div class="store-credit">${isWarbondSale ? "Warbond-Preis oben · " : ""}Store Credit: ${fmtEur(item.storeCreditPriceEurInclVat)}</div>`
+          item.storeCreditPriceUsd != null && item.storeCreditPriceUsd !== item.warbondPriceUsd
+            ? `<div class="store-credit">${isWarbondSale ? t("store_credit_prefix") : ""}${t("store_credit", { price: fmtPrice(item.storeCreditPriceUsd) })}</div>`
             : "";
-        const usdRef = item.price != null ? `<div class="usd-ref">${fmtMoney(item.price)} USD (RSI-Anzeige)</div>` : "";
-        const unavailable = item.availability === "OutOfStock" ? `<div class="unavailable">aktuell nicht einzeln kaufbar</div>` : "";
+        const usdRef =
+          item.price != null && CURRENCIES[currentCurrency].code !== "USD"
+            ? `<div class="usd-ref">${t("rsi_display", { price: fmtUsdRaw(item.price) })}</div>`
+            : "";
+        const unavailable = item.availability === "OutOfStock" ? `<div class="unavailable">${t("unavailable")}</div>` : "";
         return `
           <div class="card" data-id="${item.id}">
             ${item.image ? `<img src="${item.image}" loading="lazy" alt="${item.name}" />` : ""}
@@ -387,21 +718,44 @@
     });
   }
 
+  function showToast(item) {
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.innerHTML = `<div class="t-title">${t("toast_title")}</div><div>${t("toast_body", { name: item.name, pct: item.discountPct })}</div>`;
+    document.getElementById("toasts").appendChild(el);
+    setTimeout(() => el.remove(), 7000);
+  }
+
+  function checkForNewSales(items) {
+    const currentSaleIds = new Set(items.filter((i) => i.onSale).map((i) => i.id));
+    if (!firstItemsLoad) {
+      for (const item of items) {
+        if (item.onSale && !knownSaleIds.has(item.id)) showToast(item);
+      }
+    }
+    knownSaleIds = currentSaleIds;
+    firstItemsLoad = false;
+  }
+
   async function loadItems() {
     const res = await fetch("/api/items");
     const data = await res.json();
+    checkForNewSales(data.items);
     allItems = data.items;
     render();
   }
 
-  // --- Detail-Overlay mit Preis-Historie ---
-
-  function buildStepChart(events, currentPriceEur) {
+  // ---------------------------------------------------------------------
+  // Detail-Overlay mit Preis-Historie
+  // ---------------------------------------------------------------------
+  function buildStepChart(events, currentPriceUsd) {
     const points = events
-      .filter((e) => e.priceEurInclVat != null)
-      .map((e) => ({ price: e.priceEurInclVat, at: new Date(e.at).getTime() }));
-    if (points.length === 0) return "<p style='color:var(--muted)'>Noch keine Preis-Historie.</p>";
-    if (points.length === 1) points.push({ price: currentPriceEur, at: Date.now() });
+      .filter((e) => e.price != null)
+      .map((e) => ({ price: convertPrice(e.price), at: new Date(e.at).getTime() }))
+      .filter((p) => p.price != null);
+    if (points.length === 0) return `<p style='color:var(--muted)'>${t("detail_no_chart")}</p>`;
+    const currentConverted = convertPrice(currentPriceUsd);
+    if (points.length === 1) points.push({ price: currentConverted, at: Date.now() });
     else points.push({ price: points[points.length - 1].price, at: Date.now() });
 
     const W = 600, H = 160, PAD = 34;
@@ -410,7 +764,7 @@
     let minP = Math.min(...prices), maxP = Math.max(...prices);
     if (minP === maxP) { minP -= 1; maxP += 1; }
 
-    const x = (t) => PAD + ((t - minT) / Math.max(1, maxT - minT)) * (W - PAD * 2);
+    const x = (tt) => PAD + ((tt - minT) / Math.max(1, maxT - minT)) * (W - PAD * 2);
     const y = (p) => H - PAD + ((maxP - p) / (maxP - minP)) * (H - PAD * 2 - 10);
 
     let d = `M ${x(points[0].at)} ${y(points[0].price)}`;
@@ -419,11 +773,13 @@
       d += ` L ${x(points[i].at)} ${y(points[i].price)}`;
     }
 
+    const fmtConverted = (v) => new Intl.NumberFormat(CURRENCIES[currentCurrency].locale, { style: "currency", currency: CURRENCIES[currentCurrency].code }).format(v);
+
     return `
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="#0a5688" stroke-width="1" />
-        <text x="${PAD}" y="14" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtEur(maxP)}</text>
-        <text x="${PAD}" y="${H - PAD + 16}" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtEur(minP)}</text>
+        <text x="${PAD}" y="14" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtConverted(maxP)}</text>
+        <text x="${PAD}" y="${H - PAD + 16}" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtConverted(minP)}</text>
         <path d="${d}" fill="none" stroke="#43edf8" stroke-width="2" style="filter: drop-shadow(0 0 4px rgba(67,237,248,0.6))" />
       </svg>`;
   }
@@ -432,7 +788,7 @@
     const overlay = document.getElementById("overlay");
     const body = document.getElementById("detail-body");
     overlay.classList.add("visible");
-    body.innerHTML = "lädt…";
+    body.innerHTML = `<span class="spinner"></span>${t("loading")}`;
 
     const item = allItems.find((i) => i.id === itemId);
     const res = await fetch(`/api/items/${itemId}/history`);
@@ -441,11 +797,11 @@
 
     const statCards = stats
       ? `
-        <div class="stat-card"><div class="label">Aktueller Preis</div><div class="value">${fmtEur(stats.currentPriceEurInclVat)}</div><div class="sub">${fmtMoney(stats.currentPrice)} USD</div></div>
-        <div class="stat-card"><div class="label">Allzeit-Tief</div><div class="value">${fmtEur(stats.allTimeLowEurInclVat)}</div><div class="sub">${fmtMoney(stats.allTimeLow)} USD</div></div>
-        <div class="stat-card"><div class="label">Allzeit-Hoch</div><div class="value">${fmtEur(stats.allTimeHighEurInclVat)}</div><div class="sub">${fmtMoney(stats.allTimeHigh)} USD</div></div>
-        <div class="stat-card"><div class="label">Preisänderungen</div><div class="value">${stats.priceChangeCount}</div></div>
-        ${item && item.storeCreditPriceEurInclVat != null ? `<div class="stat-card"><div class="label">Store Credit</div><div class="value">${fmtEur(item.storeCreditPriceEurInclVat)}</div><div class="sub">${fmtMoney(item.storeCreditPriceUsd)} USD</div></div>` : ""}
+        <div class="stat-card"><div class="label">${t("detail_current_price")}</div><div class="value">${fmtPrice(stats.currentPrice)}</div></div>
+        <div class="stat-card"><div class="label">${t("detail_all_time_low")}</div><div class="value">${fmtPrice(stats.allTimeLow)}</div></div>
+        <div class="stat-card"><div class="label">${t("detail_all_time_high")}</div><div class="value">${fmtPrice(stats.allTimeHigh)}</div></div>
+        <div class="stat-card"><div class="label">${t("detail_price_changes")}</div><div class="value">${stats.priceChangeCount}</div></div>
+        ${item && item.storeCreditPriceUsd != null ? `<div class="stat-card"><div class="label">${t("detail_store_credit")}</div><div class="value">${fmtPrice(item.storeCreditPriceUsd)}</div></div>` : ""}
       `
       : "";
 
@@ -454,18 +810,33 @@
       .reverse()
       .map(
         (e) =>
-          `<div class="row"><span class="p">${fmtEur(e.priceEurInclVat)} <span style="color:var(--muted)">(${fmtMoney(e.price)})</span>${e.availability === "OutOfStock" ? " · nicht kaufbar" : ""}</span><span class="t">${fmtDate(e.at)}</span></div>`
+          `<div class="row"><span class="p">${fmtPrice(e.price)}${e.availability === "OutOfStock" ? t("detail_not_purchasable") : ""}</span><span class="t">${fmtDate(e.at)}</span></div>`
       )
       .join("");
 
+    const di = data.item;
+    const specsParts = [];
+    if (di.crew) specsParts.push(`${t("detail_specs_crew")}: ${di.crew}`);
+    if (di.length_m) specsParts.push(`${t("detail_specs_length")}: ${di.length_m} m`);
+    if (di.mass_kg) specsParts.push(`${t("detail_specs_mass")}: ${Number(di.mass_kg).toLocaleString(lang === "en" ? "en-US" : "de-DE")} kg`);
+    const specsLine = specsParts.length ? `<div class="detail-specs">${specsParts.join(" · ")}</div>` : "";
+    const focusLine = di.focus ? `<div class="detail-focus">${di.focus}${di.manufacturer_name ? " · " + di.manufacturer_name : ""}</div>` : "";
+    const descriptionHtml = di.description ? `<p class="detail-description">${di.description}</p>` : "";
+
     body.innerHTML = `
-      <button class="close" id="detail-close">✕ Schließen</button>
-      <h2>${item ? item.name : data.item.name}</h2>
-      <div style="color:var(--muted); font-size:12px;">${stats ? "Getrackt seit " + fmtDate(stats.trackedSince) : "Noch keine Historie"}</div>
+      ${di.image ? `<img src="${di.image}" alt="${di.name}" />` : ""}
+      <div id="detail-body-inner">
+      <button class="close" id="detail-close">${t("detail_close")}</button>
+      <h2>${di.name}</h2>
+      ${focusLine}
+      ${specsLine}
+      ${descriptionHtml}
+      <div style="color:var(--muted); font-size:12px; margin-top:10px;">${stats ? t("detail_tracked_since", { date: fmtDate(stats.trackedSince) }) : t("detail_no_history")}</div>
       ${stats ? `<div id="detail-stats">${statCards}</div>` : ""}
-      <div id="chart-wrap">${stats ? buildStepChart(data.events, stats.currentPriceEurInclVat) : ""}</div>
+      <div id="chart-wrap">${stats ? buildStepChart(data.events, stats.currentPrice) : ""}</div>
       <div id="history-list">${historyRows}</div>
-      ${item ? `<a class="store-link" href="${item.url}" target="_blank" rel="noopener">Im RSI-Store öffnen →</a>` : ""}
+      <a class="store-link" href="${di.url}" target="_blank" rel="noopener">${t("detail_open_store")}</a>
+      </div>
     `;
     document.getElementById("detail-close").addEventListener("click", () => overlay.classList.remove("visible"));
   }
@@ -474,9 +845,13 @@
     if (e.target.id === "overlay") e.currentTarget.classList.remove("visible");
   });
 
-  // --- Kalender ---
-
-  const MONTH_NAMES = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+  // ---------------------------------------------------------------------
+  // Kalender
+  // ---------------------------------------------------------------------
+  const MONTH_NAMES = {
+    de: ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"],
+    en: ["January","February","March","April","May","June","July","August","September","October","November","December"],
+  };
 
   function nextOccurrence(month, day) {
     const now = new Date();
@@ -487,24 +862,28 @@
     return candidate;
   }
 
+  let lastCalendarData = null;
+
   function renderRecurringEvents(events) {
+    const months = MONTH_NAMES[lang] || MONTH_NAMES.de;
     const withDates = events
       .map((e) => ({ ...e, nextDate: nextOccurrence(e.month, e.day) }))
       .sort((a, b) => a.nextDate - b.nextDate);
 
     document.getElementById("cal-recurring").innerHTML = withDates
       .map((e) => {
-        const whenText = e.day ? `${e.day}. ${MONTH_NAMES[e.month - 1]}` : `${MONTH_NAMES[e.month - 1]} (erwartet)`;
+        const whenText = e.day ? `${e.day}. ${months[e.month - 1]}` : `${months[e.month - 1]} ${t("cal_expected")}`;
         const daysUntil = Math.round((e.nextDate - new Date()) / 86400000);
-        const badge = e.majorSale ? `<span class="badge major">Großer Sale</span>` : `<span class="badge minor">Kein großer Sale</span>`;
+        const badge = e.majorSale ? `<span class="badge major">${t("cal_major_sale")}</span>` : `<span class="badge minor">${t("cal_minor_sale")}</span>`;
+        const note = lang === "en" && e.noteEn ? e.noteEn : e.note;
         return `
           <div class="cal-item">
             <div class="top-row">
               <span class="title">${e.name}</span>
-              <span class="when">${whenText} · in ${daysUntil} Tagen</span>
+              <span class="when">${whenText} · ${t("cal_days_until", { n: daysUntil })}</span>
             </div>
             <div>${badge}</div>
-            <div class="note">${e.note}</div>
+            <div class="note">${note}</div>
           </div>`;
       })
       .join("");
@@ -513,7 +892,7 @@
   function renderAnnouncements(announcements) {
     const el = document.getElementById("cal-announcements");
     if (announcements.length === 0) {
-      el.innerHTML = `<p class="cal-hint">Noch keine Ankündigungen gesammelt — baut sich mit jedem Scan auf.</p>`;
+      el.innerHTML = `<p class="cal-hint">${t("cal_announcements_empty")}</p>`;
       return;
     }
     el.innerHTML = announcements
@@ -527,7 +906,7 @@
               <span class="when">${fmtRelative(a.first_seen_at)}</span>
             </div>
             ${badge ? `<div>${badge}</div>` : ""}
-            <a href="${a.url}" target="_blank" rel="noopener">Artikel öffnen →</a>
+            <a href="${a.url}" target="_blank" rel="noopener">${t("cal_article_link")}</a>
           </div>`;
       })
       .join("");
@@ -536,7 +915,7 @@
   function renderShipsInDevelopment(ships) {
     const el = document.getElementById("cal-ships");
     if (ships.length === 0) {
-      el.innerHTML = `<p class="cal-hint">Noch nicht geladen.</p>`;
+      el.innerHTML = `<p class="cal-hint">${t("cal_ships_empty")}</p>`;
       return;
     }
     el.innerHTML = ships
@@ -545,10 +924,10 @@
           <div class="cal-item">
             <div class="top-row">
               <span class="title">${s.name}</span>
-              <span class="when">${s.status === "in-concept" ? "In Konzept" : s.status}</span>
+              <span class="when">${s.status === "in-concept" ? t("cal_in_concept") : s.status}</span>
             </div>
             ${s.note ? `<div class="note">${s.note}</div>` : ""}
-            ${s.url ? `<a href="${s.url}" target="_blank" rel="noopener">Mehr erfahren →</a>` : ""}
+            ${s.url ? `<a href="${s.url}" target="_blank" rel="noopener">${t("cal_more_info")}</a>` : ""}
           </div>`
       )
       .join("");
@@ -556,10 +935,10 @@
 
   async function loadCalendar() {
     const res = await fetch("/api/calendar");
-    const data = await res.json();
-    renderRecurringEvents(data.recurringEvents);
-    renderAnnouncements(data.announcements);
-    renderShipsInDevelopment(data.shipsInDevelopment);
+    lastCalendarData = await res.json();
+    renderRecurringEvents(lastCalendarData.recurringEvents);
+    renderAnnouncements(lastCalendarData.announcements);
+    renderShipsInDevelopment(lastCalendarData.shipsInDevelopment);
   }
 
   document.getElementById("cal-subtabs").addEventListener("click", (e) => {
@@ -569,32 +948,41 @@
     document.querySelectorAll(".cal-section").forEach((s) => s.classList.toggle("active", s.dataset.calpanel === btn.dataset.calsub));
   });
 
-  // --- Statistiken ---
+  // ---------------------------------------------------------------------
+  // Statistiken
+  // ---------------------------------------------------------------------
+  let lastStats = null;
 
-  async function loadStats() {
-    const res = await fetch("/api/stats");
-    const s = await res.json();
+  function renderStats() {
+    const s = lastStats;
     const grid = document.getElementById("stat-grid");
-    if (!s.totalItems) {
-      grid.innerHTML = `<p style="color:var(--muted)">Noch keine Daten — erster Scan läuft noch.</p>`;
+    if (!s || !s.totalItems) {
+      grid.innerHTML = `<p style="color:var(--muted)">${t("stats_no_data")}</p>`;
       return;
     }
     grid.innerHTML = `
-      <div class="stat-card"><div class="label">Getrackte Items</div><div class="value">${s.totalItems}</div></div>
-      <div class="stat-card"><div class="label">Aktuell im Sale</div><div class="value">${s.onSaleCount}</div></div>
-      <div class="stat-card"><div class="label">Gesamtwert Flotte</div><div class="value">${fmtEur(s.totalCatalogValueEurInclVat)}</div><div class="sub">${fmtMoney(s.totalCatalogValue)} USD · Summe aller aktuellen Preise</div></div>
-      <div class="stat-card"><div class="label">Ø-Preis</div><div class="value">${fmtEur(s.avgPriceEurInclVat)}</div><div class="sub">${fmtMoney(s.avgPrice)} USD</div></div>
-      <div class="stat-card"><div class="label">Günstigstes Schiff</div><div class="value">${fmtEur(s.cheapest.priceEurInclVat)}</div><div class="sub">${s.cheapest.name} · ${fmtMoney(s.cheapest.price)} USD</div></div>
-      <div class="stat-card"><div class="label">Teuerstes Schiff</div><div class="value">${fmtEur(s.priciest.priceEurInclVat)}</div><div class="sub">${s.priciest.name} · ${fmtMoney(s.priciest.price)} USD</div></div>
-      ${s.biggestDiscount ? `<div class="stat-card"><div class="label">Größter Rabatt gerade</div><div class="value">-${s.biggestDiscount.discountPct}%</div><div class="sub">${s.biggestDiscount.name} · ${fmtEur(s.biggestDiscount.priceEurInclVat)}</div></div>` : ""}
-      <div class="stat-card"><div class="label">Preisänderungen getrackt</div><div class="value">${s.totalPriceChangesTracked}</div></div>
-      <div class="stat-card"><div class="label">Ankündigungen getrackt</div><div class="value">${s.totalAnnouncementsTracked}</div></div>
-      <div class="stat-card"><div class="label">Alle € inkl. 19% MwSt.</div><div class="sub">Geschätzt aus USD × Wechselkurs, keine RSI-Zahl</div></div>
+      <div class="stat-card"><div class="label">${t("stat_tracked_items")}</div><div class="value">${s.totalItems}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_on_sale")}</div><div class="value">${s.onSaleCount}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_fleet_value")}</div><div class="value">${fmtPrice(s.totalCatalogValue)}</div><div class="sub">${t("stat_fleet_value_sub")}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_avg_price")}</div><div class="value">${fmtPrice(s.avgPrice)}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_cheapest")}</div><div class="value">${fmtPrice(s.cheapest.price)}</div><div class="sub">${s.cheapest.name}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_priciest")}</div><div class="value">${fmtPrice(s.priciest.price)}</div><div class="sub">${s.priciest.name}</div></div>
+      ${s.biggestDiscount ? `<div class="stat-card"><div class="label">${t("stat_biggest_discount")}</div><div class="value">-${s.biggestDiscount.discountPct}%</div><div class="sub">${s.biggestDiscount.name}</div></div>` : ""}
+      <div class="stat-card"><div class="label">${t("stat_price_changes")}</div><div class="value">${s.totalPriceChangesTracked}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_announcements")}</div><div class="value">${s.totalAnnouncementsTracked}</div></div>
+      <div class="stat-card"><div class="label">${t("stat_tax_label")}</div><div class="sub">${t("stat_tax_sub")}</div></div>
     `;
   }
 
-  // --- Tabs / Steuerung ---
+  async function loadStats() {
+    const res = await fetch("/api/stats");
+    lastStats = await res.json();
+    renderStats();
+  }
 
+  // ---------------------------------------------------------------------
+  // Tabs / Filter / Sortierung
+  // ---------------------------------------------------------------------
   document.getElementById("toolbar").addEventListener("click", (e) => {
     const btn = e.target.closest(".pillbtn");
     if (!btn) return;
@@ -626,6 +1014,39 @@
     if (activeTab === "stats") loadStats();
   });
 
+  // ---------------------------------------------------------------------
+  // Sprache / Währung
+  // ---------------------------------------------------------------------
+  document.getElementById("lang-switch").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-lang]");
+    if (!btn) return;
+    lang = btn.dataset.lang;
+    savePref("sc-sales-lang", lang);
+    applyStaticText();
+    render();
+    if (lastCalendarData) {
+      renderRecurringEvents(lastCalendarData.recurringEvents);
+      renderAnnouncements(lastCalendarData.announcements);
+      renderShipsInDevelopment(lastCalendarData.shipsInDevelopment);
+    }
+    if (lastStats) renderStats();
+  });
+
+  document.getElementById("currency-switch").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-currency]");
+    if (!btn) return;
+    currentCurrency = btn.dataset.currency;
+    savePref("sc-sales-currency", currentCurrency);
+    applyStaticText();
+    render();
+    if (lastStats) renderStats();
+    pollStatus();
+  });
+
+  // ---------------------------------------------------------------------
+  // Start
+  // ---------------------------------------------------------------------
+  applyStaticText();
   pollStatus();
   loadItems();
   setInterval(pollStatus, 60000);
