@@ -109,6 +109,28 @@ for (const [col, type] of Object.entries(itemColumnsToAdd)) {
   }
 }
 
+// Kaufpreis kann brutto in EUR ODER netto in USD eingegeben worden sein --
+// Store-Credit-Beträge (Melt-Rückerstattung, Kauf mit vorhandenem Store
+// Credit) sind bei RSI grundsätzlich IMMER netto/steuerfrei, unabhängig
+// davon, mit welcher Steuer der ursprüngliche Kauf bezahlt wurde. Deshalb
+// getrennt: purchase_price_original/-currency (reine Anzeige, was
+// tatsächlich bezahlt wurde) vs. purchase_price_usd (netto-USD-Äquivalent,
+// vergleichbar mit dem aktuellen Store-Credit-Wert). manual_current_value_usd
+// erlaubt, den aktuellen Melt-Wert händisch zu überschreiben, falls der
+// Nutzer den echten Wert aus seinem RSI-Konto kennt oder das Schiff nicht
+// im Katalog getrackt wird.
+const existingHangarColumns = new Set(db.prepare("PRAGMA table_info(hangar_items)").all().map((c) => c.name));
+const hangarColumnsToAdd = {
+  purchase_price_original: "REAL",
+  purchase_price_currency: "TEXT",
+  manual_current_value_usd: "REAL",
+};
+for (const [col, type] of Object.entries(hangarColumnsToAdd)) {
+  if (!existingHangarColumns.has(col)) {
+    db.exec(`ALTER TABLE hangar_items ADD COLUMN ${col} ${type}`);
+  }
+}
+
 function upsertItem(item) {
   const now = new Date().toISOString();
   const existing = db.prepare("SELECT id FROM items WHERE id = ?").get(item.id);
@@ -191,6 +213,10 @@ function getMeta(key) {
 // sofort als "normal", sondern erst nachdem er sich als der übliche Preis
 // etabliert hat. Fällt auf den aktuellen Preis zurück, wenn noch keine
 // Historie existiert (erster Scan eines Items -> kein Sale erkennbar).
+// Wie lange ein Item nach einem OutOfStock->InStock-Wechsel noch als "Neu
+// verfügbar" markiert bleibt.
+const NEWLY_AVAILABLE_WINDOW_DAYS = 7;
+
 function getItemsWithSaleInfo() {
   const items = db.prepare("SELECT * FROM items ORDER BY name").all();
   const latestStmt = db.prepare(
@@ -201,6 +227,13 @@ function getItemsWithSaleInfo() {
     `SELECT price, availability, checked_at FROM snapshots
      WHERE item_id = ? AND checked_at >= datetime('now', '-30 days')
      ORDER BY checked_at ASC`
+  );
+  // Eigene, ungefilterte Abfrage nur für die Verfügbarkeits-Historie -- der
+  // eigentliche OutOfStock-Eintrag vor einem Wechsel kann älter als die
+  // 30-Tage-Preis-Historie oben sein, wird für "neu verfügbar" aber trotzdem
+  // gebraucht.
+  const availabilityHistoryStmt = db.prepare(
+    `SELECT availability, checked_at FROM snapshots WHERE item_id = ? ORDER BY checked_at ASC`
   );
 
   return items.map((item) => {
@@ -258,11 +291,26 @@ function getItemsWithSaleInfo() {
       saleType = onSale ? "price_drop" : null;
     }
 
-    // "neu verfügbar": aktuell InStock, war aber in den letzten 14 Tagen
-    // (das aktuell laufende Segment ausgenommen) durchgehend OutOfStock.
-    const recentPrior = priorHistory.filter((h) => h.availability != null);
-    const wasUnavailable = recentPrior.length > 0 && recentPrior.every((h) => h.availability === "OutOfStock");
-    const newlyAvailable = latest.availability === "InStock" && wasUnavailable;
+    // "Neu verfügbar": zeitbasiert -- Beginn der aktuellen, ununterbrochenen
+    // InStock-Serie muss innerhalb der letzten NEWLY_AVAILABLE_WINDOW_DAYS
+    // liegen, UND davor muss es mindestens einmal OutOfStock gewesen sein
+    // (sonst war es evtl. schon vor Trackingbeginn dauerhaft verfügbar).
+    const availHistory = availabilityHistoryStmt.all(item.id);
+    let flipToInStockAt = null;
+    let everOutOfStock = false;
+    for (let i = availHistory.length - 1; i >= 0; i--) {
+      if (availHistory[i].availability === "InStock") {
+        flipToInStockAt = availHistory[i].checked_at;
+      } else {
+        if (availHistory[i].availability === "OutOfStock") everOutOfStock = true;
+        break;
+      }
+    }
+    const newlyAvailable =
+      latest.availability === "InStock" &&
+      flipToInStockAt != null &&
+      everOutOfStock &&
+      Date.now() - new Date(flipToInStockAt).getTime() <= NEWLY_AVAILABLE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
     // Explizit getrennt von der Sale-Badge-Logik oben (die auch die eigene
     // Preis-Historie als Fallback nutzt): warbondPriceUsd/storeCreditPriceUsd
@@ -467,14 +515,17 @@ function addHangarItem(userId, data) {
   const now = new Date().toISOString();
   const info = db
     .prepare(
-      `INSERT INTO hangar_items (user_id, item_id, custom_name, purchase_price_usd, insurance_type, insurance_months, acquired_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO hangar_items (user_id, item_id, custom_name, purchase_price_usd, purchase_price_original, purchase_price_currency, manual_current_value_usd, insurance_type, insurance_months, acquired_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       userId,
       data.itemId || null,
       data.customName || null,
       data.purchasePriceUsd ?? null,
+      data.purchasePriceOriginal ?? null,
+      data.purchasePriceCurrency || null,
+      data.manualCurrentValueUsd ?? null,
       data.insuranceType || null,
       data.insuranceMonths ?? null,
       data.acquiredAt || null,
@@ -487,11 +538,14 @@ function updateHangarItem(userId, id, data) {
   const existing = db.prepare("SELECT * FROM hangar_items WHERE id = ? AND user_id = ?").get(id, userId);
   if (!existing) return false;
   db.prepare(
-    `UPDATE hangar_items SET item_id=?, custom_name=?, purchase_price_usd=?, insurance_type=?, insurance_months=?, acquired_at=? WHERE id=? AND user_id=?`
+    `UPDATE hangar_items SET item_id=?, custom_name=?, purchase_price_usd=?, purchase_price_original=?, purchase_price_currency=?, manual_current_value_usd=?, insurance_type=?, insurance_months=?, acquired_at=? WHERE id=? AND user_id=?`
   ).run(
     data.itemId !== undefined ? data.itemId : existing.item_id,
     data.customName !== undefined ? data.customName : existing.custom_name,
     data.purchasePriceUsd !== undefined ? data.purchasePriceUsd : existing.purchase_price_usd,
+    data.purchasePriceOriginal !== undefined ? data.purchasePriceOriginal : existing.purchase_price_original,
+    data.purchasePriceCurrency !== undefined ? data.purchasePriceCurrency : existing.purchase_price_currency,
+    data.manualCurrentValueUsd !== undefined ? data.manualCurrentValueUsd : existing.manual_current_value_usd,
     data.insuranceType !== undefined ? data.insuranceType : existing.insurance_type,
     data.insuranceMonths !== undefined ? data.insuranceMonths : existing.insurance_months,
     data.acquiredAt !== undefined ? data.acquiredAt : existing.acquired_at,
@@ -508,7 +562,8 @@ function deleteHangarItem(userId, id) {
 
 // Reichert die rohen Hangar-Zeilen mit dem aktuell getrackten Store-Credit-
 // Preis an (statt den Nutzer das manuell pflegen zu lassen) -- Differenz zum
-// Kaufpreis ergibt sich daraus direkt.
+// Kaufpreis ergibt sich daraus direkt. manual_current_value_usd überschreibt
+// den Live-Wert, falls der Nutzer den echten Melt-Wert kennt/eingetragen hat.
 function getHangarItems(userId) {
   const rows = db.prepare("SELECT * FROM hangar_items WHERE user_id = ? ORDER BY created_at DESC").all(userId);
   const priced = getItemsWithSaleInfo();
@@ -516,7 +571,7 @@ function getHangarItems(userId) {
 
   return rows.map((r) => {
     const live = r.item_id ? byId.get(r.item_id) : null;
-    const currentValueUsd = live ? live.storeCreditPriceUsd : null;
+    const currentValueUsd = r.manual_current_value_usd != null ? r.manual_current_value_usd : live ? live.storeCreditPriceUsd : null;
     return {
       ...r,
       itemName: live ? live.name : r.custom_name,

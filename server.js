@@ -119,15 +119,51 @@ app.get("/api/hangar", requireAuth, (req, res) => {
   res.json({ items: getHangarItems(req.user.id) });
 });
 
+// Kaufpreis kann in USD (netto, direkt vergleichbar mit Store Credit) oder
+// EUR (brutto, inkl. 19% dt. MwSt., wie tatsächlich bezahlt) eingegeben
+// werden. Store Credit ist bei RSI grundsätzlich immer netto -- ein
+// EUR-Kaufpreis muss deshalb für den Wertvergleich in sein netto-USD-
+// Äquivalent zurückgerechnet werden (Näherung mit dem AKTUELLEN Wechselkurs,
+// nicht dem zum Kaufzeitpunkt, da wir den nicht kennen).
+function toNetUsd(amount, currency) {
+  if (amount == null) return null;
+  if (currency === "EUR") {
+    const fx = getExchangeRate();
+    if (!fx) return null;
+    return amount / fx.usdToEur / (1 + GERMAN_VAT_RATE);
+  }
+  return amount;
+}
+
 app.post("/api/hangar", requireAuth, (req, res) => {
-  const { itemId, customName, purchasePriceUsd, insuranceType, insuranceMonths, acquiredAt } = req.body || {};
+  const { itemId, customName, purchasePrice, purchasePriceCurrency, manualCurrentValueUsd, insuranceType, insuranceMonths, acquiredAt } =
+    req.body || {};
   if (!itemId && !customName) return res.status(400).json({ error: "itemId or customName required" });
-  const id = addHangarItem(req.user.id, { itemId, customName, purchasePriceUsd, insuranceType, insuranceMonths, acquiredAt });
+  const currency = purchasePriceCurrency === "EUR" ? "EUR" : "USD";
+  const purchasePriceUsd = toNetUsd(purchasePrice, currency);
+  const id = addHangarItem(req.user.id, {
+    itemId,
+    customName,
+    purchasePriceUsd,
+    purchasePriceOriginal: purchasePrice ?? null,
+    purchasePriceCurrency: purchasePrice != null ? currency : null,
+    manualCurrentValueUsd,
+    insuranceType,
+    insuranceMonths,
+    acquiredAt,
+  });
   res.json({ id });
 });
 
 app.put("/api/hangar/:id", requireAuth, (req, res) => {
-  const ok = updateHangarItem(req.user.id, Number(req.params.id), req.body || {});
+  const body = { ...req.body };
+  if (body.purchasePrice !== undefined) {
+    const currency = body.purchasePriceCurrency === "EUR" ? "EUR" : "USD";
+    body.purchasePriceUsd = toNetUsd(body.purchasePrice, currency);
+    body.purchasePriceOriginal = body.purchasePrice;
+    body.purchasePriceCurrency = body.purchasePrice != null ? currency : null;
+  }
+  const ok = updateHangarItem(req.user.id, Number(req.params.id), body);
   if (!ok) return res.status(404).json({ error: "not found" });
   res.json({ ok: true });
 });
@@ -162,6 +198,53 @@ app.get("/api/upgrade-cost", (req, res) => {
     upgradeCostUsd: possible ? Math.round((toPrice - fromPrice) * 100) / 100 : null,
     possible,
   });
+});
+
+// Automatische Vorschläge: für jedes Hangar-Schiff mit bekanntem Kaufpreis,
+// welches JETZT ein Upgrade auf ein teureres, getracktes Schiff lohnender
+// macht, als dieses Zielschiff direkt neu zu kaufen. "Lohnend" heißt hier
+// konkret: (tatsächlicher Kaufpreis des eigenen Schiffs + heutiger CCU-
+// Preisunterschied) < aktuellem Direktkaufpreis des Zielschiffs -- z.B. weil
+// das eigene Schiff seinerzeit günstig/im Sale gekauft wurde. Bewusst
+// dieselbe Einschränkung wie /api/upgrade-cost: nur der direkte
+// Store-Credit-Preisunterschied, keine Mehrfach-Hop-Kette.
+app.get("/api/hangar/upgrade-suggestions", requireAuth, (req, res) => {
+  const hangarItems = getHangarItems(req.user.id).filter((h) => h.item_id && h.purchase_price_usd != null);
+  const items = getItemsWithSaleInfo();
+  const byId = new Map(items.map((i) => [i.id, i]));
+
+  const suggestions = [];
+  for (const h of hangarItems) {
+    const source = byId.get(h.item_id);
+    if (!source || source.storeCreditPriceUsd == null) continue;
+
+    for (const target of items) {
+      if (target.id === source.id) continue;
+      if (target.storeCreditPriceUsd == null || target.price == null) continue;
+      if (target.storeCreditPriceUsd <= source.storeCreditPriceUsd) continue; // kein Upgrade, nur nach oben moeglich
+
+      const ccuCostNow = target.storeCreditPriceUsd - source.storeCreditPriceUsd;
+      const totalIfUpgradeNow = h.purchase_price_usd + ccuCostNow;
+      const savingsUsd = target.price - totalIfUpgradeNow;
+      if (savingsUsd > 1) {
+        suggestions.push({
+          hangarItemId: h.id,
+          sourceName: h.itemName,
+          targetId: target.id,
+          targetName: target.name,
+          targetImage: target.image,
+          purchasePriceUsd: h.purchase_price_usd,
+          ccuCostNowUsd: Math.round(ccuCostNow * 100) / 100,
+          totalIfUpgradeNowUsd: Math.round(totalIfUpgradeNow * 100) / 100,
+          directBuyPriceUsd: target.price,
+          savingsUsd: Math.round(savingsUsd * 100) / 100,
+        });
+      }
+    }
+  }
+
+  suggestions.sort((a, b) => b.savingsUsd - a.savingsUsd);
+  res.json({ suggestions: suggestions.slice(0, 10) });
 });
 
 // Rechnet einen USD-Betrag in einen deutschen Brutto-EUR-Betrag um (aktueller
