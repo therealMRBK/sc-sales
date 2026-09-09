@@ -44,6 +44,27 @@ Zweiter Tab in der UI, drei Quellen, keine erfundenen Termine:
   keine verbindlichen Release-Termine für Schiffe in Entwicklung. Diese
   Liste zeigt entsprechend nur Status + Hinweis, nie ein erfundenes Datum.
 
+## Account, Hangar & Upgrade-Rechner
+
+Vierter Tab. Eigenes, schlankes Session-System (kein express-session/
+cookie-parser -- Node-Bordmittel `crypto.scrypt` für Passwort-Hashes,
+signierte Zufalls-Tokens als `HttpOnly`-Cookie, nur der SHA-256-Hash des
+Tokens landet in der DB).
+
+- **Hangar**: eigene Schiffe mit Kaufpreis und Versicherung (keine /
+  X Monate / Lifetime) eintragen. Der aktuelle Wert wird automatisch aus
+  der eigenen Preis-Historie nachgeschlagen (Store-Credit-Preis), nicht
+  manuell gepflegt -- Differenz zum Kaufpreis ergibt sich direkt daraus.
+  Schiffe außerhalb des Katalogs (Melts, Sonderpakete) lassen sich als
+  Freitext-Name ohne Live-Wert anlegen.
+- **Upgrade-Kosten-Rechner**: Start- und Zielschiff wählen, zeigt den
+  direkten Store-Credit-Preisunterschied. **Bewusst keine Mehrfach-Hop-
+  CCU-Chain-Optimierung** wie bei Community-Tools ("CCU Game") -- die
+  brauchen personalisierte, eingeloggte RSI-Upgrade-Preise und individuell
+  gekaufte historische CCUs, Daten, die ein anonymer Scanner grundsätzlich
+  nicht sehen kann. Nur wenn das Zielschiff teurer ist als das Startschiff
+  (Store Credit) ist ein direkter CCU überhaupt möglich.
+
 ## Architektur
 
 - **Preis-Scanner** (`scanner.js: runScan`): holt alle Store-Items über

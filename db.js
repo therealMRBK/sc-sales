@@ -57,6 +57,36 @@ db.exec(`
     url TEXT,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+
+  -- Ein Hangar-Eintrag ist bewusst NICHT zwingend an einen getrackten Store-
+  -- Eintrag gebunden (item_id darf NULL sein) -- Melts/Sonderpakete/alte,
+  -- nicht mehr im Store gelistete Schiffe lassen sich sonst nicht abbilden.
+  CREATE TABLE IF NOT EXISTS hangar_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    item_id TEXT REFERENCES items(id),
+    custom_name TEXT,
+    purchase_price_usd REAL,
+    insurance_type TEXT,
+    insurance_months INTEGER,
+    acquired_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_hangar_user ON hangar_items(user_id);
 `);
 
 // Nachträglich ergänzte Spalten für den lokalen Store-Mirror (Beschreibung,
@@ -386,6 +416,118 @@ function getExchangeRate() {
     : null;
 }
 
+// -------------------------------------------------------------------------
+// Auth
+// -------------------------------------------------------------------------
+function createUser(email, passwordHash) {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare(`INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)`)
+    .run(email, passwordHash, now);
+  return info.lastInsertRowid;
+}
+
+function getUserByEmail(email) {
+  return db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+}
+
+function getUserById(id) {
+  return db.prepare("SELECT id, email, created_at FROM users WHERE id = ?").get(id);
+}
+
+function createSession(userId, tokenHash, expiresAt) {
+  db.prepare(`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`).run(
+    tokenHash,
+    userId,
+    new Date().toISOString(),
+    expiresAt
+  );
+}
+
+// Abgelaufene Session wird beim Zugriff gleich mit aufgeräumt, kein
+// separater Cleanup-Job nötig -- Tabelle bleibt dadurch von selbst klein.
+function getSession(tokenHash) {
+  const row = db.prepare("SELECT * FROM sessions WHERE token_hash = ?").get(tokenHash);
+  if (!row) return null;
+  if (new Date(row.expires_at) < new Date()) {
+    db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+    return null;
+  }
+  return row;
+}
+
+function deleteSession(tokenHash) {
+  db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+}
+
+// -------------------------------------------------------------------------
+// Hangar
+// -------------------------------------------------------------------------
+function addHangarItem(userId, data) {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare(
+      `INSERT INTO hangar_items (user_id, item_id, custom_name, purchase_price_usd, insurance_type, insurance_months, acquired_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      userId,
+      data.itemId || null,
+      data.customName || null,
+      data.purchasePriceUsd ?? null,
+      data.insuranceType || null,
+      data.insuranceMonths ?? null,
+      data.acquiredAt || null,
+      now
+    );
+  return info.lastInsertRowid;
+}
+
+function updateHangarItem(userId, id, data) {
+  const existing = db.prepare("SELECT * FROM hangar_items WHERE id = ? AND user_id = ?").get(id, userId);
+  if (!existing) return false;
+  db.prepare(
+    `UPDATE hangar_items SET item_id=?, custom_name=?, purchase_price_usd=?, insurance_type=?, insurance_months=?, acquired_at=? WHERE id=? AND user_id=?`
+  ).run(
+    data.itemId !== undefined ? data.itemId : existing.item_id,
+    data.customName !== undefined ? data.customName : existing.custom_name,
+    data.purchasePriceUsd !== undefined ? data.purchasePriceUsd : existing.purchase_price_usd,
+    data.insuranceType !== undefined ? data.insuranceType : existing.insurance_type,
+    data.insuranceMonths !== undefined ? data.insuranceMonths : existing.insurance_months,
+    data.acquiredAt !== undefined ? data.acquiredAt : existing.acquired_at,
+    id,
+    userId
+  );
+  return true;
+}
+
+function deleteHangarItem(userId, id) {
+  const res = db.prepare("DELETE FROM hangar_items WHERE id = ? AND user_id = ?").run(id, userId);
+  return res.changes > 0;
+}
+
+// Reichert die rohen Hangar-Zeilen mit dem aktuell getrackten Store-Credit-
+// Preis an (statt den Nutzer das manuell pflegen zu lassen) -- Differenz zum
+// Kaufpreis ergibt sich daraus direkt.
+function getHangarItems(userId) {
+  const rows = db.prepare("SELECT * FROM hangar_items WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+  const priced = getItemsWithSaleInfo();
+  const byId = new Map(priced.map((i) => [i.id, i]));
+
+  return rows.map((r) => {
+    const live = r.item_id ? byId.get(r.item_id) : null;
+    const currentValueUsd = live ? live.storeCreditPriceUsd : null;
+    return {
+      ...r,
+      itemName: live ? live.name : r.custom_name,
+      itemImage: live ? live.image : null,
+      itemUrl: live ? live.url : null,
+      currentValueUsd,
+      deltaUsd: currentValueUsd != null && r.purchase_price_usd != null ? currentValueUsd - r.purchase_price_usd : null,
+    };
+  });
+}
+
 module.exports = {
   db,
   DATA_DIR,
@@ -402,4 +544,14 @@ module.exports = {
   getItemHistory,
   getStats,
   getExchangeRate,
+  createUser,
+  getUserByEmail,
+  getUserById,
+  createSession,
+  getSession,
+  deleteSession,
+  addHangarItem,
+  updateHangarItem,
+  deleteHangarItem,
+  getHangarItems,
 };

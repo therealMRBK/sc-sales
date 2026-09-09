@@ -10,8 +10,13 @@ const {
   getStats,
   getExchangeRate,
   MEDIA_DIR,
+  addHangarItem,
+  updateHangarItem,
+  deleteHangarItem,
+  getHangarItems,
 } = require("./db");
 const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
+const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
 
 const PORT = process.env.PORT || 3000;
@@ -20,12 +25,144 @@ const SHIP_MATRIX_INTERVAL_HOURS = Number(process.env.SHIP_MATRIX_INTERVAL_HOURS
 const FX_INTERVAL_HOURS = Number(process.env.FX_INTERVAL_HOURS || 24);
 
 const app = express();
+// Hinter Reverse-Proxies (NPM) noetig, damit req.ip/req.secure den echten
+// Client statt den Proxy widerspiegeln -- relevant fuers Login-Rate-Limiting
+// und die Secure-Cookie-Entscheidung.
+app.set("trust proxy", true);
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 // Lokal gecachtes Schiffs-Artwork + Hersteller-Logos -- Besucher laden das
 // von uns, nicht von RSIs CDN (siehe scanner.js: downloadImageIfMissing).
 app.use("/media", express.static(MEDIA_DIR, { maxAge: "30d", immutable: true }));
 
+// -------------------------------------------------------------------------
+// Auth: manuelles, schlankes Cookie-Session-Handling -- kein zusaetzliches
+// cookie-parser/express-session-Paket, nur Node-Bordmittel.
+// -------------------------------------------------------------------------
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  const cookies = {};
+  if (!header) return cookies;
+  header.split(";").forEach((pair) => {
+    const idx = pair.indexOf("=");
+    if (idx === -1) return;
+    cookies[pair.slice(0, idx).trim()] = decodeURIComponent(pair.slice(idx + 1).trim());
+  });
+  return cookies;
+}
+
+function setSessionCookie(req, res, token, expiresAt) {
+  const secure = req.secure || req.headers["x-forwarded-proto"] === "https";
+  res.setHeader(
+    "Set-Cookie",
+    `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Expires=${new Date(expiresAt).toUTCString()}${secure ? "; Secure" : ""}`
+  );
+}
+
+function clearSessionCookie(res) {
+  res.setHeader("Set-Cookie", "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+}
+
+app.use((req, res, next) => {
+  req.user = getUserFromToken(parseCookies(req).sid);
+  next();
+});
+
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "not authenticated" });
+  next();
+}
+
 app.get("/healthz", (req, res) => res.send("ok"));
+
+app.post("/api/auth/register", (req, res) => {
+  if (!checkRateLimit(req.ip)) return res.status(429).json({ error: "too many attempts, please wait" });
+  const { email, password } = req.body || {};
+  if (!isValidEmail(email)) return res.status(400).json({ error: "invalid email" });
+  if (typeof password !== "string" || password.length < 8) {
+    return res.status(400).json({ error: "password must be at least 8 characters" });
+  }
+  if (getUserByEmail(email)) return res.status(409).json({ error: "email already registered" });
+
+  const userId = createUser(email, hashPassword(password));
+  const { token, expiresAt } = issueSession(userId);
+  setSessionCookie(req, res, token, expiresAt);
+  res.json({ user: { id: userId, email } });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  if (!checkRateLimit(req.ip)) return res.status(429).json({ error: "too many attempts, please wait" });
+  const { email, password } = req.body || {};
+  const user = getUserByEmail(email || "");
+  if (!user || !verifyPassword(password || "", user.password_hash)) {
+    return res.status(401).json({ error: "invalid credentials" });
+  }
+  const { token, expiresAt } = issueSession(user.id);
+  setSessionCookie(req, res, token, expiresAt);
+  res.json({ user: { id: user.id, email: user.email } });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  revokeSession(parseCookies(req).sid);
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", (req, res) => {
+  res.json({ user: req.user ? { id: req.user.id, email: req.user.email } : null });
+});
+
+// -------------------------------------------------------------------------
+// Hangar
+// -------------------------------------------------------------------------
+app.get("/api/hangar", requireAuth, (req, res) => {
+  res.json({ items: getHangarItems(req.user.id) });
+});
+
+app.post("/api/hangar", requireAuth, (req, res) => {
+  const { itemId, customName, purchasePriceUsd, insuranceType, insuranceMonths, acquiredAt } = req.body || {};
+  if (!itemId && !customName) return res.status(400).json({ error: "itemId or customName required" });
+  const id = addHangarItem(req.user.id, { itemId, customName, purchasePriceUsd, insuranceType, insuranceMonths, acquiredAt });
+  res.json({ id });
+});
+
+app.put("/api/hangar/:id", requireAuth, (req, res) => {
+  const ok = updateHangarItem(req.user.id, Number(req.params.id), req.body || {});
+  if (!ok) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
+});
+
+app.delete("/api/hangar/:id", requireAuth, (req, res) => {
+  const ok = deleteHangarItem(req.user.id, Number(req.params.id));
+  if (!ok) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
+});
+
+// -------------------------------------------------------------------------
+// Upgrade-Kosten-Rechner -- bewusst NUR der direkte Store-Credit-
+// Preisunterschied zwischen zwei Schiffen, keine Mehrfach-Hop-Optimierung.
+// Echte CCU-Chain-Arbitrage (wie sie Community-Tools wie das "CCU Game"
+// anbieten) braucht personalisierte, eingeloggte RSI-Upgrade-Preise und
+// individuell gekaufte historische CCUs -- Daten, die ein anonymer Scanner
+// grundsaetzlich nicht sehen kann.
+// -------------------------------------------------------------------------
+app.get("/api/upgrade-cost", (req, res) => {
+  const items = getItemsWithSaleInfo();
+  const from = items.find((i) => i.id === req.query.from);
+  const to = items.find((i) => i.id === req.query.to);
+  if (!from || !to) return res.status(404).json({ error: "unknown item(s)" });
+
+  const fromPrice = from.storeCreditPriceUsd;
+  const toPrice = to.storeCreditPriceUsd;
+  const possible = fromPrice != null && toPrice != null && toPrice >= fromPrice;
+
+  res.json({
+    from: { id: from.id, name: from.name, priceUsd: fromPrice },
+    to: { id: to.id, name: to.name, priceUsd: toPrice },
+    upgradeCostUsd: possible ? Math.round((toPrice - fromPrice) * 100) / 100 : null,
+    possible,
+  });
+});
 
 // Rechnet einen USD-Betrag in einen deutschen Brutto-EUR-Betrag um (aktueller
 // EZB-Referenzkurs * 1 + 19% MwSt.). RSI selbst zeigt keine EUR-Preise ohne

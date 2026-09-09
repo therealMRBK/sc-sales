@@ -196,6 +196,53 @@
   .stat-card .value { font-family: var(--font-mono); font-size: 22px; color: var(--cyan); font-weight: 700; }
   .stat-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
+  #account-view { padding: 8px 28px 40px; display: none; }
+  #account-view.visible { display: block; }
+  #auth-forms { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; }
+  .auth-box {
+    background: var(--panel); border: 1px solid var(--border-dim); padding: 20px;
+    display: flex; flex-direction: column; gap: 10px; min-width: 260px; flex: 1;
+  }
+  .auth-box h2 { margin: 0 0 4px; font-family: var(--font-head); font-size: 14px; letter-spacing: 1px; color: var(--cyan); text-transform: uppercase; }
+  .auth-box input, #add-hangar-form input, #add-hangar-form select, #upgrade-calc input {
+    background: var(--bg); border: 1px solid var(--border-dim); color: var(--text);
+    padding: 8px 10px; font-family: var(--font-body); font-size: 13px;
+  }
+  .auth-box button, #hangar-add-btn, #upgrade-calc-btn {
+    background: rgba(67,237,248,0.1); border: 1px solid var(--cyan-dim); color: var(--cyan);
+    padding: 9px 14px; cursor: pointer; font-family: var(--font-head); font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .auth-box button:hover, #hangar-add-btn:hover, #upgrade-calc-btn:hover { background: rgba(67,237,248,0.2); }
+  .auth-error { color: var(--danger); font-size: 12px; margin: 0; }
+
+  #user-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 13px; color: var(--muted); }
+  #user-bar button { background: var(--panel); border: 1px solid var(--border-dim); color: var(--muted); padding: 6px 14px; cursor: pointer; font-family: var(--font-body); font-size: 12px; }
+  #user-bar button:hover { color: var(--text-bright); border-color: var(--danger); }
+
+  #add-hangar-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  #add-hangar-form input[type="text"], #hangar-ship-input { min-width: 200px; }
+  #add-hangar-form input[type="number"] { width: 130px; }
+
+  .hangar-row {
+    background: var(--panel); border: 1px solid var(--border-dim); padding: 12px 14px;
+    display: flex; align-items: center; gap: 14px; margin-bottom: 8px; animation: fadeIn 0.3s ease;
+  }
+  .hangar-row img { width: 70px; height: 40px; object-fit: cover; border: 1px solid var(--border-dim); flex-shrink: 0; }
+  .hangar-row .info { flex: 1; min-width: 0; }
+  .hangar-row .info .name { font-family: var(--font-head); font-size: 13px; color: var(--text-bright); }
+  .hangar-row .info .meta { font-size: 11px; color: var(--muted); font-family: var(--font-mono); margin-top: 2px; }
+  .hangar-row .delta { font-family: var(--font-mono); font-size: 14px; font-weight: 700; text-align: right; min-width: 90px; }
+  .hangar-row .delta.pos { color: var(--cyan); }
+  .hangar-row .delta.neg { color: var(--danger); }
+  .hangar-row .remove-btn { background: none; border: 1px solid var(--border-dim); color: var(--muted); cursor: pointer; padding: 6px 10px; font-size: 12px; }
+  .hangar-row .remove-btn:hover { color: var(--danger); border-color: var(--danger); }
+  .insurance-badge { font-size: 10px; padding: 2px 6px; border: 1px solid var(--border-dim); color: var(--muted); margin-left: 6px; }
+  .insurance-badge.lti { color: var(--amber-bright); border-color: var(--amber); }
+
+  #upgrade-calc { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  #upgrade-calc input { min-width: 220px; }
+  #upgrade-result { margin-top: 12px; }
+
   /* Detail-Overlay */
   #overlay {
     position: fixed; inset: 0; background: rgba(0,4,10,0.85); backdrop-filter: blur(3px);
@@ -259,6 +306,7 @@
     <button data-tab="sales" class="active"></button>
     <button data-tab="calendar"></button>
     <button data-tab="stats"></button>
+    <button data-tab="account"></button>
   </div>
 </div>
 <div class="toolbar" id="toolbar">
@@ -297,6 +345,61 @@
   <div class="stats-section">
     <h2 id="stats-title"></h2>
     <div class="stat-grid" id="stat-grid"></div>
+  </div>
+</div>
+
+<div id="account-view">
+  <div id="auth-forms">
+    <div class="auth-box">
+      <h2 id="login-title"></h2>
+      <input type="email" id="login-email" autocomplete="email" />
+      <input type="password" id="login-password" autocomplete="current-password" />
+      <button id="login-submit"></button>
+      <p class="auth-error" id="login-error" hidden></p>
+    </div>
+    <div class="auth-box">
+      <h2 id="register-title"></h2>
+      <input type="email" id="register-email" autocomplete="email" />
+      <input type="password" id="register-password" autocomplete="new-password" />
+      <button id="register-submit"></button>
+      <p class="auth-error" id="register-error" hidden></p>
+    </div>
+  </div>
+
+  <div id="hangar-content" hidden>
+    <div id="user-bar">
+      <span id="user-email-label"></span>
+      <button id="logout-btn"></button>
+    </div>
+
+    <div class="stats-section">
+      <h2 id="hangar-title"></h2>
+      <form id="add-hangar-form">
+        <input list="ship-options" id="hangar-ship-input" autocomplete="off" />
+        <datalist id="ship-options"></datalist>
+        <input type="number" step="0.01" id="hangar-purchase-price" />
+        <select id="hangar-insurance-type">
+          <option value="none" id="ins-opt-none"></option>
+          <option value="months" id="ins-opt-months"></option>
+          <option value="lifetime" id="ins-opt-lifetime"></option>
+        </select>
+        <input type="number" id="hangar-insurance-months" hidden min="1" />
+        <button type="submit" id="hangar-add-btn"></button>
+      </form>
+      <p class="auth-error" id="hangar-error" hidden></p>
+      <div id="hangar-list"></div>
+    </div>
+
+    <div class="stats-section">
+      <h2 id="upgrade-calc-title"></h2>
+      <p class="cal-hint" id="upgrade-calc-hint"></p>
+      <div id="upgrade-calc">
+        <input list="ship-options" id="upgrade-from" autocomplete="off" />
+        <input list="ship-options" id="upgrade-to" autocomplete="off" />
+        <button id="upgrade-calc-btn"></button>
+      </div>
+      <div id="upgrade-result"></div>
+    </div>
   </div>
 </div>
 
@@ -394,6 +497,48 @@
       relative_min: "vor {n} Min.",
       relative_hours: "vor {n} Std.",
       relative_days: "vor {n} Tagen",
+      tab_account: "Account",
+      login_title: "Login",
+      login_email_placeholder: "E-Mail",
+      login_password_placeholder: "Passwort",
+      login_submit: "Einloggen",
+      register_title: "Registrieren",
+      register_email_placeholder: "E-Mail",
+      register_password_placeholder: "Passwort (min. 8 Zeichen)",
+      register_submit: "Konto erstellen",
+      auth_error_invalid_email: "Ungültige E-Mail-Adresse.",
+      auth_error_password_length: "Passwort muss mindestens 8 Zeichen haben.",
+      auth_error_email_taken: "Diese E-Mail ist schon registriert.",
+      auth_error_invalid_credentials: "E-Mail oder Passwort falsch.",
+      auth_error_rate_limited: "Zu viele Versuche, bitte kurz warten.",
+      auth_error_generic: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
+      logout_btn: "Logout",
+      hangar_title: "Mein Hangar",
+      hangar_ship_placeholder: "Schiff suchen…",
+      hangar_price_placeholder: "Kaufpreis (USD)",
+      hangar_months_placeholder: "Monate",
+      hangar_add_btn: "Hinzufügen",
+      hangar_error_unknown_ship: "Bitte ein Schiff aus der Liste wählen (oder Kaufpreis-Feld für eigenen Namen leer lassen).",
+      hangar_error_generic: "Konnte nicht gespeichert werden.",
+      hangar_empty: "Noch keine Schiffe im Hangar. Füge oben dein erstes hinzu.",
+      hangar_insurance_none: "Keine Versicherung",
+      hangar_insurance_months: "X Monate",
+      hangar_insurance_lifetime: "Lifetime (LTI)",
+      hangar_insurance_months_badge: "{n} Monate",
+      hangar_insurance_lifetime_badge: "LTI",
+      hangar_purchase_price: "Kaufpreis: {price}",
+      hangar_current_value: "Aktueller Wert: {price}",
+      hangar_delta_pos: "+{price}",
+      hangar_delta_neg: "{price}",
+      hangar_remove_btn: "Entfernen",
+      upgrade_calc_title: "Upgrade-Kosten-Rechner",
+      upgrade_calc_hint: "Direkter Store-Credit-Preisunterschied zwischen zwei Schiffen — keine Mehrfach-Hop-Optimierung. Echte CCU-Chain-Arbitrage braucht eingeloggte, personalisierte RSI-Daten, die ein anonymer Scanner nicht sehen kann.",
+      upgrade_from_placeholder: "Start-Schiff",
+      upgrade_to_placeholder: "Ziel-Schiff",
+      upgrade_calc_btn: "Berechnen",
+      upgrade_result_cost: "Upgrade-Kosten {from} → {to}: {price}",
+      upgrade_result_impossible: "Kein direkter CCU möglich — {to} ist günstiger oder gleich teuer wie {from} (Store Credit). CCU-Upgrades gehen nur nach oben.",
+      upgrade_result_unknown_ship: "Bitte für beide Felder ein Schiff aus der Liste wählen.",
     },
     en: {
       subtitle: "Watches the RSI pledge store and flags price drops & newly available ships.",
@@ -476,6 +621,48 @@
       relative_min: "{n} min. ago",
       relative_hours: "{n} hr. ago",
       relative_days: "{n} days ago",
+      tab_account: "Account",
+      login_title: "Login",
+      login_email_placeholder: "Email",
+      login_password_placeholder: "Password",
+      login_submit: "Log in",
+      register_title: "Register",
+      register_email_placeholder: "Email",
+      register_password_placeholder: "Password (min. 8 characters)",
+      register_submit: "Create account",
+      auth_error_invalid_email: "Invalid email address.",
+      auth_error_password_length: "Password must be at least 8 characters.",
+      auth_error_email_taken: "This email is already registered.",
+      auth_error_invalid_credentials: "Email or password incorrect.",
+      auth_error_rate_limited: "Too many attempts, please wait a moment.",
+      auth_error_generic: "Something went wrong. Please try again.",
+      logout_btn: "Log out",
+      hangar_title: "My hangar",
+      hangar_ship_placeholder: "Search ship…",
+      hangar_price_placeholder: "Purchase price (USD)",
+      hangar_months_placeholder: "Months",
+      hangar_add_btn: "Add",
+      hangar_error_unknown_ship: "Please pick a ship from the list (or leave the price field empty for a custom name).",
+      hangar_error_generic: "Could not save.",
+      hangar_empty: "No ships in your hangar yet. Add your first one above.",
+      hangar_insurance_none: "No insurance",
+      hangar_insurance_months: "X months",
+      hangar_insurance_lifetime: "Lifetime (LTI)",
+      hangar_insurance_months_badge: "{n} months",
+      hangar_insurance_lifetime_badge: "LTI",
+      hangar_purchase_price: "Purchase price: {price}",
+      hangar_current_value: "Current value: {price}",
+      hangar_delta_pos: "+{price}",
+      hangar_delta_neg: "{price}",
+      hangar_remove_btn: "Remove",
+      upgrade_calc_title: "Upgrade cost calculator",
+      upgrade_calc_hint: "Direct store-credit price difference between two ships — no multi-hop optimization. Real CCU-chain arbitrage needs logged-in, personalized RSI data an anonymous scanner can't access.",
+      upgrade_from_placeholder: "Start ship",
+      upgrade_to_placeholder: "Target ship",
+      upgrade_calc_btn: "Calculate",
+      upgrade_result_cost: "Upgrade cost {from} → {to}: {price}",
+      upgrade_result_impossible: "No direct CCU possible — {to} is cheaper or equal to {from} (Store Credit). CCU upgrades only go upward.",
+      upgrade_result_unknown_ship: "Please pick a ship from the list for both fields.",
     },
   };
 
@@ -597,10 +784,35 @@
     document.getElementById("cal-ships-title").textContent = t("cal_ships_title");
     document.getElementById("cal-ships-hint").textContent = t("cal_ships_hint");
     document.getElementById("stats-title").textContent = t("stats_title");
+    document.querySelector('#tabs button[data-tab="account"]').textContent = t("tab_account");
+    document.getElementById("login-title").textContent = t("login_title");
+    document.getElementById("login-email").placeholder = t("login_email_placeholder");
+    document.getElementById("login-password").placeholder = t("login_password_placeholder");
+    document.getElementById("login-submit").textContent = t("login_submit");
+    document.getElementById("register-title").textContent = t("register_title");
+    document.getElementById("register-email").placeholder = t("register_email_placeholder");
+    document.getElementById("register-password").placeholder = t("register_password_placeholder");
+    document.getElementById("register-submit").textContent = t("register_submit");
+    document.getElementById("logout-btn").textContent = t("logout_btn");
+    document.getElementById("hangar-title").textContent = t("hangar_title");
+    document.getElementById("hangar-ship-input").placeholder = t("hangar_ship_placeholder");
+    document.getElementById("hangar-purchase-price").placeholder = t("hangar_price_placeholder");
+    document.getElementById("hangar-insurance-months").placeholder = t("hangar_months_placeholder");
+    document.getElementById("hangar-add-btn").textContent = t("hangar_add_btn");
+    document.getElementById("ins-opt-none").textContent = t("hangar_insurance_none");
+    document.getElementById("ins-opt-months").textContent = t("hangar_insurance_months");
+    document.getElementById("ins-opt-lifetime").textContent = t("hangar_insurance_lifetime");
+    document.getElementById("upgrade-calc-title").textContent = t("upgrade_calc_title");
+    document.getElementById("upgrade-calc-hint").textContent = t("upgrade_calc_hint");
+    document.getElementById("upgrade-from").placeholder = t("upgrade_from_placeholder");
+    document.getElementById("upgrade-to").placeholder = t("upgrade_to_placeholder");
+    document.getElementById("upgrade-calc-btn").textContent = t("upgrade_calc_btn");
     document.documentElement.lang = lang;
 
     document.querySelectorAll("#lang-switch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === lang));
     document.querySelectorAll("#currency-switch button").forEach((b) => b.classList.toggle("active", b.dataset.currency === currentCurrency));
+
+    if (currentUser) renderHangar();
   }
 
   // ---------------------------------------------------------------------
@@ -746,6 +958,7 @@
     checkForNewSales(data.items);
     allItems = data.items;
     render();
+    if (document.getElementById("ship-options")) populateShipOptions();
   }
 
   // ---------------------------------------------------------------------
@@ -1010,11 +1223,205 @@
 
     document.getElementById("calendar").classList.toggle("visible", activeTab === "calendar");
     document.getElementById("stats-view").classList.toggle("visible", activeTab === "stats");
+    document.getElementById("account-view").classList.toggle("visible", activeTab === "account");
     document.getElementById("toolbar").classList.toggle("hidden", activeTab !== "sales");
     document.getElementById("grid").classList.toggle("hidden", activeTab !== "sales");
 
     if (activeTab === "calendar") loadCalendar();
     if (activeTab === "stats") loadStats();
+    if (activeTab === "account") loadAccount();
+  });
+
+  // ---------------------------------------------------------------------
+  // Account / Hangar / Upgrade-Rechner
+  // ---------------------------------------------------------------------
+  let currentUser = null;
+
+  function populateShipOptions() {
+    document.getElementById("ship-options").innerHTML = allItems
+      .map((i) => `<option value="${i.name.replace(/"/g, "&quot;")}"></option>`)
+      .join("");
+  }
+
+  function findItemByName(name) {
+    const q = (name || "").trim().toLowerCase();
+    if (!q) return null;
+    return allItems.find((i) => i.name.toLowerCase() === q) || null;
+  }
+
+  function updateAccountView() {
+    document.getElementById("auth-forms").hidden = !!currentUser;
+    document.getElementById("hangar-content").hidden = !currentUser;
+    if (currentUser) document.getElementById("user-email-label").textContent = currentUser.email;
+  }
+
+  async function loadAccount() {
+    populateShipOptions();
+    const res = await fetch("/api/auth/me");
+    const data = await res.json();
+    currentUser = data.user;
+    updateAccountView();
+    if (currentUser) await renderHangar();
+  }
+
+  function showAuthError(id, message) {
+    const el = document.getElementById(id);
+    el.textContent = message;
+    el.hidden = false;
+  }
+  function hideAuthError(id) {
+    document.getElementById(id).hidden = true;
+  }
+
+  async function handleAuthResponse(res, errorElId) {
+    const data = await res.json();
+    if (!res.ok) {
+      let msg = t("auth_error_generic");
+      if (res.status === 429) msg = t("auth_error_rate_limited");
+      else if (data.error === "invalid email") msg = t("auth_error_invalid_email");
+      else if (data.error && data.error.indexOf("password must be") !== -1) msg = t("auth_error_password_length");
+      else if (data.error === "email already registered") msg = t("auth_error_email_taken");
+      else if (data.error === "invalid credentials") msg = t("auth_error_invalid_credentials");
+      showAuthError(errorElId, msg);
+      return;
+    }
+    hideAuthError(errorElId);
+    currentUser = data.user;
+    updateAccountView();
+    await renderHangar();
+  }
+
+  document.getElementById("login-submit").addEventListener("click", async () => {
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    await handleAuthResponse(res, "login-error");
+  });
+
+  document.getElementById("register-submit").addEventListener("click", async () => {
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    await handleAuthResponse(res, "register-error");
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    currentUser = null;
+    updateAccountView();
+  });
+
+  document.getElementById("hangar-insurance-type").addEventListener("change", (e) => {
+    document.getElementById("hangar-insurance-months").hidden = e.target.value !== "months";
+  });
+
+  document.getElementById("add-hangar-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    hideAuthError("hangar-error");
+    const shipName = document.getElementById("hangar-ship-input").value;
+    if (!shipName.trim()) return;
+    const item = findItemByName(shipName);
+    const purchasePrice = document.getElementById("hangar-purchase-price").value;
+    const insuranceType = document.getElementById("hangar-insurance-type").value;
+    const insuranceMonths = document.getElementById("hangar-insurance-months").value;
+
+    // Kein Treffer in der Liste? Dann als Freitext-Name anlegen (Melt,
+    // Sonderpaket, o.ä.) -- ohne live verknüpften Wert, statt abzulehnen.
+    const res = await fetch("/api/hangar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itemId: item ? item.id : null,
+        customName: item ? null : shipName.trim(),
+        purchasePriceUsd: purchasePrice ? Number(purchasePrice) : null,
+        insuranceType: insuranceType === "none" ? null : insuranceType,
+        insuranceMonths: insuranceType === "months" && insuranceMonths ? Number(insuranceMonths) : null,
+      }),
+    });
+    if (!res.ok) {
+      showAuthError("hangar-error", t("hangar_error_generic"));
+      return;
+    }
+    document.getElementById("add-hangar-form").reset();
+    document.getElementById("hangar-insurance-months").hidden = true;
+    await renderHangar();
+  });
+
+  async function renderHangar() {
+    const res = await fetch("/api/hangar");
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = document.getElementById("hangar-list");
+
+    if (data.items.length === 0) {
+      list.innerHTML = `<p class="cal-hint">${t("hangar_empty")}</p>`;
+      return;
+    }
+
+    list.innerHTML = data.items
+      .map((h) => {
+        const name = h.itemName || "?";
+        const insuranceBadge =
+          h.insurance_type === "lifetime"
+            ? `<span class="insurance-badge lti">${t("hangar_insurance_lifetime_badge")}</span>`
+            : h.insurance_type === "months" && h.insurance_months
+            ? `<span class="insurance-badge">${t("hangar_insurance_months_badge", { n: h.insurance_months })}</span>`
+            : "";
+        const deltaHtml =
+          h.deltaUsd != null
+            ? `<div class="delta ${h.deltaUsd >= 0 ? "pos" : "neg"}">${
+                h.deltaUsd >= 0 ? t("hangar_delta_pos", { price: fmtPrice(h.deltaUsd) }) : t("hangar_delta_neg", { price: fmtPrice(h.deltaUsd) })
+              }</div>`
+            : `<div class="delta">–</div>`;
+        const metaParts = [];
+        if (h.purchase_price_usd != null) metaParts.push(t("hangar_purchase_price", { price: fmtPrice(h.purchase_price_usd) }));
+        if (h.currentValueUsd != null) metaParts.push(t("hangar_current_value", { price: fmtPrice(h.currentValueUsd) }));
+        return `
+          <div class="hangar-row" data-id="${h.id}">
+            ${h.itemImage ? `<img src="${h.itemImage}" alt="" />` : ""}
+            <div class="info">
+              <div class="name">${name}${insuranceBadge}</div>
+              <div class="meta">${metaParts.join(" · ")}</div>
+            </div>
+            ${deltaHtml}
+            <button class="remove-btn" data-remove="${h.id}">${t("hangar_remove_btn")}</button>
+          </div>`;
+      })
+      .join("");
+
+    list.querySelectorAll("[data-remove]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/api/hangar/${btn.dataset.remove}`, { method: "DELETE" });
+        renderHangar();
+      });
+    });
+  }
+
+  document.getElementById("upgrade-calc-btn").addEventListener("click", async () => {
+    const fromItem = findItemByName(document.getElementById("upgrade-from").value);
+    const toItem = findItemByName(document.getElementById("upgrade-to").value);
+    const resultEl = document.getElementById("upgrade-result");
+    if (!fromItem || !toItem) {
+      resultEl.innerHTML = `<p class="auth-error">${t("upgrade_result_unknown_ship")}</p>`;
+      return;
+    }
+    const res = await fetch(`/api/upgrade-cost?from=${encodeURIComponent(fromItem.id)}&to=${encodeURIComponent(toItem.id)}`);
+    const data = await res.json();
+    if (!data.possible) {
+      resultEl.innerHTML = `<p class="auth-error">${t("upgrade_result_impossible", { from: data.from.name, to: data.to.name })}</p>`;
+      return;
+    }
+    resultEl.innerHTML = `<div class="stat-card"><div class="label">${data.from.name} → ${data.to.name}</div><div class="value">${fmtPrice(
+      data.upgradeCostUsd
+    )}</div></div>`;
   });
 
   // ---------------------------------------------------------------------
