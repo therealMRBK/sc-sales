@@ -190,6 +190,14 @@ function getItemsWithSaleInfo() {
     const wasUnavailable = recentPrior.length > 0 && recentPrior.every((h) => h.availability === "OutOfStock");
     const newlyAvailable = latest.availability === "InStock" && wasUnavailable;
 
+    // Explizit getrennt von der Sale-Badge-Logik oben (die auch die eigene
+    // Preis-Historie als Fallback nutzt): warbondPriceUsd/storeCreditPriceUsd
+    // spiegeln NUR RSIs eigene, tatsächlich gelistete Tiers wider -- ohne
+    // Tier-Rabatt sind beide identisch (Zahlung per Warbond oder Store
+    // Credit kostet dann gleich viel).
+    const warbondPriceUsd = hasTierDiscount ? latest.current_price : latest.price;
+    const storeCreditPriceUsd = hasTierDiscount ? latest.reference_price : latest.price;
+
     return {
       ...item,
       price: hasTierDiscount ? latest.current_price : latest.price,
@@ -199,6 +207,8 @@ function getItemsWithSaleInfo() {
       discountPct,
       newlyAvailable,
       saleType,
+      warbondPriceUsd,
+      storeCreditPriceUsd,
     };
   });
 }
@@ -324,6 +334,11 @@ function getStats() {
   };
 }
 
+function getExchangeRate() {
+  const rate = getMeta("usd_eur_rate");
+  return rate ? { usdToEur: Number(rate), updatedAt: getMeta("usd_eur_rate_at") } : null;
+}
+
 module.exports = {
   db,
   upsertItem,
@@ -337,4 +352,5 @@ module.exports = {
   getShipsInDevelopment,
   getItemHistory,
   getStats,
+  getExchangeRate,
 };

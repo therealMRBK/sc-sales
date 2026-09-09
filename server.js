@@ -1,37 +1,78 @@
 const path = require("path");
 const express = require("express");
-const { getItemsWithSaleInfo, getMeta, setMeta, getRecentAnnouncements, getShipsInDevelopment, getItemHistory, getStats } = require("./db");
-const { runScan, scanCommLink, scanShipsInDevelopment } = require("./scanner");
+const {
+  getItemsWithSaleInfo,
+  getMeta,
+  setMeta,
+  getRecentAnnouncements,
+  getShipsInDevelopment,
+  getItemHistory,
+  getStats,
+  getExchangeRate,
+} = require("./db");
+const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const RECURRING_EVENTS = require("./events");
 
 const PORT = process.env.PORT || 3000;
 const SCAN_INTERVAL_MINUTES = Number(process.env.SCAN_INTERVAL_MINUTES || 60);
 const SHIP_MATRIX_INTERVAL_HOURS = Number(process.env.SHIP_MATRIX_INTERVAL_HOURS || 24);
+const FX_INTERVAL_HOURS = Number(process.env.FX_INTERVAL_HOURS || 24);
 
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/healthz", (req, res) => res.send("ok"));
 
+// Rechnet einen USD-Betrag in einen deutschen Brutto-EUR-Betrag um (aktueller
+// EZB-Referenzkurs * 1 + 19% MwSt.). RSI selbst zeigt keine EUR-Preise ohne
+// eingeloggten Account -- das hier ist eine transparent gekennzeichnete
+// Schätzung, keine von RSI übernommene Zahl. `null`, solange noch kein
+// Wechselkurs abgerufen wurde (kurz nach dem allerersten Start).
+function toEurInclVat(usd, rate) {
+  if (usd == null || rate == null) return null;
+  return Math.round(usd * rate * (1 + GERMAN_VAT_RATE) * 100) / 100;
+}
+
+function withGermanPricing(obj, rate, fields) {
+  const out = { ...obj };
+  for (const [srcField, destField] of fields) {
+    out[destField] = toEurInclVat(obj[srcField], rate);
+  }
+  return out;
+}
+
 // Leichter Endpoint zum Pollen -- Frontend fragt das häufiger ab als /api/items
 // und lädt die volle Liste nur neu, wenn sich lastScanAt geändert hat.
 app.get("/api/status", (req, res) => {
+  const fx = getExchangeRate();
   res.json({
     lastScanAt: getMeta("last_scan_at"),
     lastScanOk: Number(getMeta("last_scan_ok") || 0),
     lastScanFailed: Number(getMeta("last_scan_failed") || 0),
     scanIntervalMinutes: SCAN_INTERVAL_MINUTES,
+    fxRate: fx ? fx.usdToEur : null,
+    fxRateUpdatedAt: fx ? fx.updatedAt : null,
+    germanVatRate: GERMAN_VAT_RATE,
   });
 });
 
 app.get("/api/items", (req, res) => {
-  const items = getItemsWithSaleInfo();
+  const fx = getExchangeRate();
+  const rate = fx ? fx.usdToEur : null;
+  const items = getItemsWithSaleInfo().map((item) =>
+    withGermanPricing(item, rate, [
+      ["price", "priceEurInclVat"],
+      ["baselinePrice", "baselinePriceEurInclVat"],
+      ["warbondPriceUsd", "warbondPriceEurInclVat"],
+      ["storeCreditPriceUsd", "storeCreditPriceEurInclVat"],
+    ])
+  );
   items.sort((a, b) => {
     if (a.onSale !== b.onSale) return a.onSale ? -1 : 1;
     if (a.newlyAvailable !== b.newlyAvailable) return a.newlyAvailable ? -1 : 1;
     return (a.name || "").localeCompare(b.name || "");
   });
-  res.json({ items });
+  res.json({ items, fxRate: rate });
 });
 
 app.get("/api/calendar", (req, res) => {
@@ -45,11 +86,35 @@ app.get("/api/calendar", (req, res) => {
 app.get("/api/items/:id/history", (req, res) => {
   const result = getItemHistory(req.params.id);
   if (!result) return res.status(404).json({ error: "unknown item" });
-  res.json(result);
+
+  const fx = getExchangeRate();
+  const rate = fx ? fx.usdToEur : null;
+  const events = result.events.map((e) => ({ ...e, priceEurInclVat: toEurInclVat(e.price, rate) }));
+  const stats = result.stats
+    ? {
+        ...result.stats,
+        allTimeLowEurInclVat: toEurInclVat(result.stats.allTimeLow, rate),
+        allTimeHighEurInclVat: toEurInclVat(result.stats.allTimeHigh, rate),
+        currentPriceEurInclVat: toEurInclVat(result.stats.currentPrice, rate),
+      }
+    : null;
+
+  res.json({ ...result, events, stats, fxRate: rate });
 });
 
 app.get("/api/stats", (req, res) => {
-  res.json(getStats());
+  const fx = getExchangeRate();
+  const rate = fx ? fx.usdToEur : null;
+  const stats = getStats();
+  const out = withGermanPricing(stats, rate, [
+    ["totalCatalogValue", "totalCatalogValueEurInclVat"],
+    ["avgPrice", "avgPriceEurInclVat"],
+  ]);
+  if (out.cheapest) out.cheapest = withGermanPricing(out.cheapest, rate, [["price", "priceEurInclVat"]]);
+  if (out.priciest) out.priciest = withGermanPricing(out.priciest, rate, [["price", "priceEurInclVat"]]);
+  if (out.biggestDiscount) out.biggestDiscount = withGermanPricing(out.biggestDiscount, rate, [["price", "priceEurInclVat"]]);
+  out.fxRate = rate;
+  res.json(out);
 });
 
 app.listen(PORT, () => {
@@ -74,6 +139,12 @@ async function runCycle() {
   if (dueForShipMatrix) {
     await scanShipsInDevelopment().catch((err) => console.error("[ship-matrix] fehlgeschlagen:", err));
     setMeta("last_ship_matrix_run_at", new Date().toISOString());
+  }
+
+  const lastFxRun = getMeta("usd_eur_rate_at");
+  const dueForFx = !lastFxRun || Date.now() - new Date(lastFxRun).getTime() >= FX_INTERVAL_HOURS * 60 * 60 * 1000;
+  if (dueForFx) {
+    await scanExchangeRate().catch((err) => console.error("[fx] fehlgeschlagen:", err));
   }
 }
 

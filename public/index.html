@@ -64,6 +64,7 @@
   header h1 span { color: var(--cyan); }
   header p { margin: 0; color: var(--muted); font-size: 12px; letter-spacing: 0.5px; }
   #status { margin-top: 10px; font-size: 11px; color: var(--cyan-dim); font-family: var(--font-mono); letter-spacing: 0.5px; }
+  #fx-note { margin-top: 4px; font-size: 10px; color: var(--muted); font-family: var(--font-mono); letter-spacing: 0.3px; max-width: 900px; }
 
   #tabs { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border-dim); }
   #tabs button {
@@ -127,6 +128,8 @@
   .price { font-size: 17px; font-weight: 700; color: var(--text-bright); }
   .price.on-sale { color: var(--amber-bright); }
   .baseline { font-size: 12px; color: var(--muted); text-decoration: line-through; }
+  .store-credit { font-size: 11px; color: var(--cyan-dim); font-family: var(--font-mono); }
+  .usd-ref { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
   .unavailable { font-size: 11px; color: var(--muted); font-style: italic; }
   #empty { padding: 60px 28px; color: var(--muted); text-align: center; font-family: var(--font-body); }
 
@@ -134,11 +137,20 @@
   #calendar.visible, #stats-view.visible { display: block; }
   #grid.hidden, .toolbar.hidden, #empty.hidden-tab { display: none; }
 
+  #cal-subtabs { display: flex; gap: 6px; margin: 10px 0 4px; flex-wrap: wrap; }
+  .cal-subtab {
+    background: var(--panel); border: 1px solid var(--border-dim); color: var(--muted);
+    padding: 7px 14px; cursor: pointer; font-family: var(--font-body); font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+  .cal-subtab.active { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 10px rgba(67,237,248,0.2) inset; }
+  .cal-section { display: none; }
+  .cal-section.active { display: block; }
+
   .cal-section h2, .stats-section h2 {
     font-family: var(--font-head); font-size: 14px; letter-spacing: 2px; text-transform: uppercase;
-    margin: 26px 0 10px; color: var(--cyan); border-bottom: 1px solid var(--border-dim); padding-bottom: 8px;
+    margin: 20px 0 10px; color: var(--cyan); border-bottom: 1px solid var(--border-dim); padding-bottom: 8px;
   }
-  .cal-section:first-child h2 { margin-top: 10px; }
   .cal-list { display: flex; flex-direction: column; gap: 8px; }
   .cal-item {
     background: var(--panel); border: 1px solid var(--border-dim);
@@ -189,6 +201,7 @@
   <h1><span>&#9670;</span> Star Citizen — Store Sales</h1>
   <p>Beobachtet den RSI Pledge-Store und markiert Preissenkungen &amp; neu verfügbare Schiffe.</p>
   <div id="status">lädt…</div>
+  <div id="fx-note">lädt…</div>
 </header>
 <div id="tabs">
   <button data-tab="sales" class="active">Sales</button>
@@ -210,17 +223,22 @@
 <div id="empty" hidden>Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.</div>
 
 <div id="calendar">
-  <div class="cal-section">
+  <div id="cal-subtabs">
+    <button class="cal-subtab active" data-calsub="recurring">Events</button>
+    <button class="cal-subtab" data-calsub="announcements">Ankündigungen</button>
+    <button class="cal-subtab" data-calsub="ships">Schiffe in Entwicklung</button>
+  </div>
+  <div class="cal-section active" data-calpanel="recurring">
     <h2>Nächste erwartete Events</h2>
-    <p class="cal-hint">Basiert auf dem üblichen Muster vergangener Jahre — RSI legt den genauen Termin erst kurz vorher offiziell fest. Sobald eine passende Ankündigung erkannt wird, taucht sie unten mit echtem Link auf.</p>
+    <p class="cal-hint">Basiert auf dem üblichen Muster vergangener Jahre — RSI legt den genauen Termin erst kurz vorher offiziell fest. Sobald eine passende Ankündigung erkannt wird, taucht sie unter "Ankündigungen" mit echtem Link auf.</p>
     <div class="cal-list" id="cal-recurring"></div>
   </div>
-  <div class="cal-section">
+  <div class="cal-section" data-calpanel="announcements">
     <h2>Aktuelle Ankündigungen (RSI Comm-Link)</h2>
     <p class="cal-hint">Automatisch erkannte News-Artikel, rot markiert wenn sie zu einem bekannten Event passen.</p>
     <div class="cal-list" id="cal-announcements"></div>
   </div>
-  <div class="cal-section">
+  <div class="cal-section" data-calpanel="ships">
     <h2>Schiffe in Entwicklung</h2>
     <p class="cal-hint">Aus RSIs eigener Ship-Matrix — nur Status, kein Termin. RSI veröffentlicht keine verbindlichen Release-Daten für Schiffe in Entwicklung.</p>
     <div class="cal-list" id="cal-ships"></div>
@@ -253,6 +271,11 @@
     return "$" + v.toFixed(2);
   }
 
+  function fmtEur(v) {
+    if (v == null) return "–";
+    return v.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  }
+
   function fmtRelative(iso) {
     if (!iso) return "noch nie";
     const diffMs = Date.now() - new Date(iso).getTime();
@@ -276,6 +299,15 @@
         `LETZTER SCAN: ${fmtRelative(status.lastScanAt)}`.toUpperCase() +
         (status.lastScanAt ? ` (${status.lastScanOk} OK${status.lastScanFailed ? ", " + status.lastScanFailed + " FEHLER" : ""})` : "") +
         ` · INTERVALL: ${status.scanIntervalMinutes}MIN`;
+      const fxNote = document.getElementById("fx-note");
+      if (status.fxRate) {
+        fxNote.textContent =
+          `PREISE IN € INKL. ${Math.round(status.germanVatRate * 100)}% DT. MWST. — GESCHÄTZT AUS USD-PREIS × ` +
+          `WECHSELKURS (1 USD = ${status.fxRate.toFixed(4)} €, STAND ${fmtRelative(status.fxRateUpdatedAt)}). ` +
+          `KEINE VON RSI ÜBERNOMMENE ZAHL — RSI ZEIGT EUR-PREISE NUR EINGELOGGT AN.`;
+      } else {
+        fxNote.textContent = "WECHSELKURS WIRD NOCH GELADEN…";
+      }
       if (status.lastScanAt !== lastScanAt) {
         lastScanAt = status.lastScanAt;
         loadItems();
@@ -324,9 +356,15 @@
         const badges = [];
         if (item.onSale) badges.push(`<span class="badge sale">Sale -${item.discountPct}%</span>`);
         if (item.newlyAvailable) badges.push(`<span class="badge newly">Neu verfügbar</span>`);
+        const isWarbondSale = item.saleType === "listed_discount";
         const priceHtml = item.onSale
-          ? `<span class="price on-sale">${fmtMoney(item.price)}</span><span class="baseline">${fmtMoney(item.baselinePrice)}</span>`
-          : `<span class="price">${fmtMoney(item.price)}</span>`;
+          ? `<span class="price on-sale">${fmtEur(item.priceEurInclVat)}</span><span class="baseline">${fmtEur(item.baselinePriceEurInclVat)}</span>`
+          : `<span class="price">${fmtEur(item.priceEurInclVat)}</span>`;
+        const storeCreditHtml =
+          item.storeCreditPriceEurInclVat != null
+            ? `<div class="store-credit">${isWarbondSale ? "Warbond-Preis oben · " : ""}Store Credit: ${fmtEur(item.storeCreditPriceEurInclVat)}</div>`
+            : "";
+        const usdRef = item.price != null ? `<div class="usd-ref">${fmtMoney(item.price)} USD (RSI-Anzeige)</div>` : "";
         const unavailable = item.availability === "OutOfStock" ? `<div class="unavailable">aktuell nicht einzeln kaufbar</div>` : "";
         return `
           <div class="card" data-id="${item.id}">
@@ -336,6 +374,8 @@
               <div class="name">${item.name}</div>
               <div class="manufacturer">${item.manufacturer ? `<img src="${item.manufacturer}" alt="" />` : ""}</div>
               <div class="price-row">${priceHtml}</div>
+              ${storeCreditHtml}
+              ${usdRef}
               ${unavailable}
             </div>
           </div>`;
@@ -356,15 +396,15 @@
 
   // --- Detail-Overlay mit Preis-Historie ---
 
-  function buildStepChart(events, currentPrice) {
+  function buildStepChart(events, currentPriceEur) {
     const points = events
-      .filter((e) => e.price != null)
-      .map((e) => ({ price: e.price, at: new Date(e.at).getTime() }));
+      .filter((e) => e.priceEurInclVat != null)
+      .map((e) => ({ price: e.priceEurInclVat, at: new Date(e.at).getTime() }));
     if (points.length === 0) return "<p style='color:var(--muted)'>Noch keine Preis-Historie.</p>";
-    if (points.length === 1) points.push({ price: currentPrice, at: Date.now() });
+    if (points.length === 1) points.push({ price: currentPriceEur, at: Date.now() });
     else points.push({ price: points[points.length - 1].price, at: Date.now() });
 
-    const W = 600, H = 160, PAD = 30;
+    const W = 600, H = 160, PAD = 34;
     const minT = points[0].at, maxT = points[points.length - 1].at;
     const prices = points.map((p) => p.price);
     let minP = Math.min(...prices), maxP = Math.max(...prices);
@@ -382,8 +422,8 @@
     return `
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="#0a5688" stroke-width="1" />
-        <text x="${PAD}" y="14" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtMoney(maxP)}</text>
-        <text x="${PAD}" y="${H - PAD + 14}" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtMoney(minP)}</text>
+        <text x="${PAD}" y="14" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtEur(maxP)}</text>
+        <text x="${PAD}" y="${H - PAD + 16}" fill="#5a7a93" font-size="10" font-family="Share Tech Mono">${fmtEur(minP)}</text>
         <path d="${d}" fill="none" stroke="#43edf8" stroke-width="2" style="filter: drop-shadow(0 0 4px rgba(67,237,248,0.6))" />
       </svg>`;
   }
@@ -401,17 +441,21 @@
 
     const statCards = stats
       ? `
-        <div class="stat-card"><div class="label">Aktueller Preis</div><div class="value">${fmtMoney(stats.currentPrice)}</div></div>
-        <div class="stat-card"><div class="label">Allzeit-Tief</div><div class="value">${fmtMoney(stats.allTimeLow)}</div></div>
-        <div class="stat-card"><div class="label">Allzeit-Hoch</div><div class="value">${fmtMoney(stats.allTimeHigh)}</div></div>
+        <div class="stat-card"><div class="label">Aktueller Preis</div><div class="value">${fmtEur(stats.currentPriceEurInclVat)}</div><div class="sub">${fmtMoney(stats.currentPrice)} USD</div></div>
+        <div class="stat-card"><div class="label">Allzeit-Tief</div><div class="value">${fmtEur(stats.allTimeLowEurInclVat)}</div><div class="sub">${fmtMoney(stats.allTimeLow)} USD</div></div>
+        <div class="stat-card"><div class="label">Allzeit-Hoch</div><div class="value">${fmtEur(stats.allTimeHighEurInclVat)}</div><div class="sub">${fmtMoney(stats.allTimeHigh)} USD</div></div>
         <div class="stat-card"><div class="label">Preisänderungen</div><div class="value">${stats.priceChangeCount}</div></div>
+        ${item && item.storeCreditPriceEurInclVat != null ? `<div class="stat-card"><div class="label">Store Credit</div><div class="value">${fmtEur(item.storeCreditPriceEurInclVat)}</div><div class="sub">${fmtMoney(item.storeCreditPriceUsd)} USD</div></div>` : ""}
       `
       : "";
 
     const historyRows = data.events
       .slice()
       .reverse()
-      .map((e) => `<div class="row"><span class="p">${fmtMoney(e.price)}${e.availability === "OutOfStock" ? " (nicht kaufbar)" : ""}</span><span class="t">${fmtDate(e.at)}</span></div>`)
+      .map(
+        (e) =>
+          `<div class="row"><span class="p">${fmtEur(e.priceEurInclVat)} <span style="color:var(--muted)">(${fmtMoney(e.price)})</span>${e.availability === "OutOfStock" ? " · nicht kaufbar" : ""}</span><span class="t">${fmtDate(e.at)}</span></div>`
+      )
       .join("");
 
     body.innerHTML = `
@@ -419,7 +463,7 @@
       <h2>${item ? item.name : data.item.name}</h2>
       <div style="color:var(--muted); font-size:12px;">${stats ? "Getrackt seit " + fmtDate(stats.trackedSince) : "Noch keine Historie"}</div>
       ${stats ? `<div id="detail-stats">${statCards}</div>` : ""}
-      <div id="chart-wrap">${stats ? buildStepChart(data.events, stats.currentPrice) : ""}</div>
+      <div id="chart-wrap">${stats ? buildStepChart(data.events, stats.currentPriceEurInclVat) : ""}</div>
       <div id="history-list">${historyRows}</div>
       ${item ? `<a class="store-link" href="${item.url}" target="_blank" rel="noopener">Im RSI-Store öffnen →</a>` : ""}
     `;
@@ -518,6 +562,13 @@
     renderShipsInDevelopment(data.shipsInDevelopment);
   }
 
+  document.getElementById("cal-subtabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".cal-subtab");
+    if (!btn) return;
+    document.querySelectorAll(".cal-subtab").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".cal-section").forEach((s) => s.classList.toggle("active", s.dataset.calpanel === btn.dataset.calsub));
+  });
+
   // --- Statistiken ---
 
   async function loadStats() {
@@ -531,13 +582,14 @@
     grid.innerHTML = `
       <div class="stat-card"><div class="label">Getrackte Items</div><div class="value">${s.totalItems}</div></div>
       <div class="stat-card"><div class="label">Aktuell im Sale</div><div class="value">${s.onSaleCount}</div></div>
-      <div class="stat-card"><div class="label">Gesamtwert Flotte</div><div class="value">${fmtMoney(s.totalCatalogValue)}</div><div class="sub">Summe aller aktuellen Preise</div></div>
-      <div class="stat-card"><div class="label">Ø-Preis</div><div class="value">${fmtMoney(s.avgPrice)}</div></div>
-      <div class="stat-card"><div class="label">Günstigstes Schiff</div><div class="value">${fmtMoney(s.cheapest.price)}</div><div class="sub">${s.cheapest.name}</div></div>
-      <div class="stat-card"><div class="label">Teuerstes Schiff</div><div class="value">${fmtMoney(s.priciest.price)}</div><div class="sub">${s.priciest.name}</div></div>
-      ${s.biggestDiscount ? `<div class="stat-card"><div class="label">Größter Rabatt gerade</div><div class="value">-${s.biggestDiscount.discountPct}%</div><div class="sub">${s.biggestDiscount.name}</div></div>` : ""}
+      <div class="stat-card"><div class="label">Gesamtwert Flotte</div><div class="value">${fmtEur(s.totalCatalogValueEurInclVat)}</div><div class="sub">${fmtMoney(s.totalCatalogValue)} USD · Summe aller aktuellen Preise</div></div>
+      <div class="stat-card"><div class="label">Ø-Preis</div><div class="value">${fmtEur(s.avgPriceEurInclVat)}</div><div class="sub">${fmtMoney(s.avgPrice)} USD</div></div>
+      <div class="stat-card"><div class="label">Günstigstes Schiff</div><div class="value">${fmtEur(s.cheapest.priceEurInclVat)}</div><div class="sub">${s.cheapest.name} · ${fmtMoney(s.cheapest.price)} USD</div></div>
+      <div class="stat-card"><div class="label">Teuerstes Schiff</div><div class="value">${fmtEur(s.priciest.priceEurInclVat)}</div><div class="sub">${s.priciest.name} · ${fmtMoney(s.priciest.price)} USD</div></div>
+      ${s.biggestDiscount ? `<div class="stat-card"><div class="label">Größter Rabatt gerade</div><div class="value">-${s.biggestDiscount.discountPct}%</div><div class="sub">${s.biggestDiscount.name} · ${fmtEur(s.biggestDiscount.priceEurInclVat)}</div></div>` : ""}
       <div class="stat-card"><div class="label">Preisänderungen getrackt</div><div class="value">${s.totalPriceChangesTracked}</div></div>
       <div class="stat-card"><div class="label">Ankündigungen getrackt</div><div class="value">${s.totalAnnouncementsTracked}</div></div>
+      <div class="stat-card"><div class="label">Alle € inkl. 19% MwSt.</div><div class="sub">Geschätzt aus USD × Wechselkurs, keine RSI-Zahl</div></div>
     `;
   }
 

@@ -1,5 +1,10 @@
 const { upsertItem, addSnapshot, setMeta, upsertAnnouncementIfNew, replaceShipsInDevelopment } = require("./db");
 
+// Deutsche Umsatzsteuer -- RSI ist ein US-Unternehmen, die angezeigten
+// USD-Preise sind Netto-Preise ohne Steuer (in den USA gibt es keine MwSt).
+// Für DE-Kunden kommt die 19% MwSt. beim tatsächlichen Checkout dazu.
+const GERMAN_VAT_RATE = 0.19;
+
 const USER_AGENT =
   "sc-sales-scanner/1.0 (privater Preis-Tracker; kontakt siehe robertsspaceindustries.com Forum-Profil baris.kilic)";
 const REQUEST_DELAY_MS = Number(process.env.SCAN_REQUEST_DELAY_MS || 400);
@@ -260,4 +265,22 @@ async function scanShipsInDevelopment(log = console.log) {
   return inDev.length;
 }
 
-module.exports = { runScan, scanCommLink, scanShipsInDevelopment };
+// Kostenloser ECB-Referenzkurs (Frankfurter API, kein Key nötig) --
+// aktualisiert einmal täglich, reicht für Preisanzeige völlig aus. RSI
+// selbst würde beim tatsächlichen Checkout ggf. leicht abweichend runden.
+async function scanExchangeRate(log = console.log) {
+  const res = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR", {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!res.ok) throw new Error(`Wechselkurs-Abruf fehlgeschlagen: HTTP ${res.status}`);
+  const data = await res.json();
+  const rate = data.rates && data.rates.EUR;
+  if (!rate) throw new Error("Wechselkurs-Antwort ohne EUR-Rate");
+
+  setMeta("usd_eur_rate", rate);
+  setMeta("usd_eur_rate_at", new Date().toISOString());
+  log(`[fx] 1 USD = ${rate} EUR`);
+  return rate;
+}
+
+module.exports = { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE };
