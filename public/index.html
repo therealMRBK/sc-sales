@@ -29,6 +29,7 @@
     --text-bright: #fffef1;
     --muted: #5a7a93;
     --danger: #ff5d73;
+    --green: #39ff88;
     --font-head: "Orbitron", sans-serif;
     --font-body: "Electrolize", sans-serif;
     --font-mono: "Share Tech Mono", monospace;
@@ -153,6 +154,7 @@
     letter-spacing: 1px; text-transform: uppercase; border: 1px solid transparent;
   }
   .badge.sale { background: rgba(224,132,0,0.15); border-color: var(--amber); color: var(--amber-bright); }
+  .badge.new-item { background: rgba(57,255,136,0.12); border-color: var(--green); color: var(--green); }
   .badge.newly { background: rgba(67,237,248,0.12); border-color: var(--cyan-dim); color: var(--cyan); }
   .badge.major { background: rgba(255,93,115,0.15); border-color: var(--danger); color: var(--danger); }
   .badge.minor { background: rgba(90,122,147,0.15); border-color: var(--border-dim); color: var(--muted); }
@@ -354,14 +356,13 @@
   </header>
   <div id="tabs">
     <button data-tab="sales" class="active"></button>
+    <button data-tab="fleet"></button>
     <button data-tab="calendar"></button>
     <button data-tab="stats"></button>
     <button data-tab="account"></button>
   </div>
 </div>
 <div class="toolbar" id="toolbar">
-  <button class="pillbtn active" data-filter="sale"></button>
-  <button class="pillbtn" data-filter="all"></button>
   <input type="text" id="search" />
   <select id="filter-manufacturer"></select>
   <select id="filter-focus"></select>
@@ -483,10 +484,9 @@
     de: {
       subtitle: "Beobachtet den RSI Pledge-Store und markiert Preissenkungen & neu verfügbare Schiffe.",
       tab_sales: "Sales",
+      tab_fleet: "Alle Schiffe",
       tab_calendar: "Kalender",
       tab_stats: "Statistiken",
-      filter_sale: "Nur Sales",
-      filter_all: "Alle Items",
       search_placeholder: "Schiff suchen…",
       sort_name: "Name (A-Z)",
       sort_price_asc: "Preis (aufsteigend)",
@@ -494,10 +494,12 @@
       sort_discount: "Größter Rabatt",
       badge_sale: "Sale -{pct}%",
       badge_newly: "Neu verfügbar",
+      badge_new_since: "NEU seit {date}",
       store_credit_prefix: "Warbond-Preis oben · ",
       store_credit: "Store Credit: {price}",
       unavailable: "aktuell nicht einzeln kaufbar",
       empty_sales: "Aktuell keine Sales erkannt — beim ersten Scan gibt es noch keine Preis-Historie zum Vergleichen.",
+      empty_fleet: "Keine Schiffe passen zu diesem Filter.",
       rsi_display: "{price} netto, ohne MwSt.",
       loading: "Lädt…",
       status_last_scan: "LETZTER SCAN: {rel}",
@@ -618,10 +620,9 @@
     en: {
       subtitle: "Watches the RSI pledge store and flags price drops & newly available ships.",
       tab_sales: "Sales",
+      tab_fleet: "All Ships",
       tab_calendar: "Calendar",
       tab_stats: "Stats",
-      filter_sale: "Sales only",
-      filter_all: "All items",
       search_placeholder: "Search ship…",
       sort_name: "Name (A-Z)",
       sort_price_asc: "Price (low to high)",
@@ -629,10 +630,12 @@
       sort_discount: "Biggest discount",
       badge_sale: "Sale -{pct}%",
       badge_newly: "Newly available",
+      badge_new_since: "NEW since {date}",
       store_credit_prefix: "Warbond price above · ",
       store_credit: "Store Credit: {price}",
       unavailable: "not currently purchasable standalone",
       empty_sales: "No sales detected right now — the first scan has no price history to compare against yet.",
+      empty_fleet: "No ships match this filter.",
       rsi_display: "{price} net, excl. VAT",
       loading: "Loading…",
       status_last_scan: "LAST SCAN: {rel}",
@@ -829,7 +832,6 @@
   // State
   // ---------------------------------------------------------------------
   let lastScanAt = null;
-  let filter = "sale";
   let sortMode = "name";
   let searchTerm = "";
   let filterManufacturer = "all";
@@ -860,10 +862,9 @@
   function applyStaticText() {
     document.getElementById("subtitle").textContent = t("subtitle");
     document.querySelector('#tabs button[data-tab="sales"]').textContent = t("tab_sales");
+    document.querySelector('#tabs button[data-tab="fleet"]').textContent = t("tab_fleet");
     document.querySelector('#tabs button[data-tab="calendar"]').textContent = t("tab_calendar");
     document.querySelector('#tabs button[data-tab="stats"]').textContent = t("tab_stats");
-    document.querySelector('.pillbtn[data-filter="sale"]').textContent = t("filter_sale");
-    document.querySelector('.pillbtn[data-filter="all"]').textContent = t("filter_all");
     document.getElementById("search").placeholder = t("search_placeholder");
     document.getElementById("sort").innerHTML = `
       <option value="name">${t("sort_name")}</option>
@@ -872,7 +873,7 @@
       <option value="discount">${t("sort_discount")}</option>
     `;
     document.getElementById("sort").value = sortMode;
-    document.getElementById("empty").textContent = t("empty_sales");
+    document.getElementById("empty").textContent = activeTab === "fleet" ? t("empty_fleet") : t("empty_sales");
     document.querySelector('.cal-subtab[data-calsub="recurring"]').textContent = t("cal_events_tab");
     document.querySelector('.cal-subtab[data-calsub="announcements"]').textContent = t("cal_announcements_tab");
     document.querySelector('.cal-subtab[data-calsub="ships"]').textContent = t("cal_ships_tab");
@@ -981,7 +982,10 @@
   }
 
   function applyFilters(items) {
-    let result = filter === "sale" ? items.filter((i) => i.onSale || i.newlyAvailable) : items.slice();
+    // The "sales" tab is exclusively sale items (or newly-back-in-stock ones)
+    // -- no toggle to see everything there anymore. "fleet" shows the full
+    // catalog, where isNewItem drives the NEW badge instead.
+    let result = activeTab === "sales" ? items.filter((i) => i.onSale || i.newlyAvailable) : items.slice();
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       result = result.filter((i) => i.name.toLowerCase().includes(q));
@@ -1011,6 +1015,7 @@
 
     if (visible.length === 0) {
       grid.innerHTML = "";
+      empty.textContent = activeTab === "fleet" ? t("empty_fleet") : t("empty_sales");
       empty.hidden = false;
       return;
     }
@@ -1020,6 +1025,7 @@
       .map((item) => {
         const badges = [];
         if (item.onSale) badges.push(`<span class="badge sale">${t("badge_sale", { pct: item.discountPct })}</span>`);
+        if (item.isNewItem) badges.push(`<span class="badge new-item">${t("badge_new_since", { date: fmtDate(item.newSince) })}</span>`);
         if (item.newlyAvailable) badges.push(`<span class="badge newly">${t("badge_newly")}</span>`);
         const isWarbondSale = item.saleType === "listed_discount";
         const priceHtml = item.onSale
@@ -1322,13 +1328,6 @@
   // ---------------------------------------------------------------------
   // Tabs / Filter / Sortierung
   // ---------------------------------------------------------------------
-  document.getElementById("toolbar").addEventListener("click", (e) => {
-    const btn = e.target.closest(".pillbtn");
-    if (!btn) return;
-    filter = btn.dataset.filter;
-    document.querySelectorAll(".pillbtn").forEach((b) => b.classList.toggle("active", b === btn));
-    render();
-  });
   document.getElementById("search").addEventListener("input", (e) => {
     searchTerm = e.target.value;
     render();
@@ -1355,9 +1354,11 @@
     document.getElementById("calendar").classList.toggle("visible", activeTab === "calendar");
     document.getElementById("stats-view").classList.toggle("visible", activeTab === "stats");
     document.getElementById("account-view").classList.toggle("visible", activeTab === "account");
-    document.getElementById("toolbar").classList.toggle("hidden", activeTab !== "sales");
-    document.getElementById("grid").classList.toggle("hidden", activeTab !== "sales");
+    const showGrid = activeTab === "sales" || activeTab === "fleet";
+    document.getElementById("toolbar").classList.toggle("hidden", !showGrid);
+    document.getElementById("grid").classList.toggle("hidden", !showGrid);
 
+    if (showGrid) render();
     if (activeTab === "calendar") loadCalendar();
     if (activeTab === "stats") loadStats();
     if (activeTab === "account") loadAccount();

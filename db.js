@@ -216,6 +216,13 @@ function getMeta(key) {
 // Wie lange ein Item nach einem OutOfStock->InStock-Wechsel noch als "Neu
 // verfügbar" markiert bleibt.
 const NEWLY_AVAILABLE_WINDOW_DAYS = 7;
+// Wie lange ein Item ab dem allerersten Scan (first_seen_at) noch das
+// "NEU"-Schild in der großen Liste trägt -- unabhängig von Sale/Verfügbarkeit,
+// rein "seit wann kennen wir das Item überhaupt".
+const NEW_ITEM_WINDOW_DAYS = 3;
+function isNewItem(firstSeenAt) {
+  return Date.now() - new Date(firstSeenAt).getTime() <= NEW_ITEM_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
 
 function getItemsWithSaleInfo() {
   const items = db.prepare("SELECT * FROM items ORDER BY name").all();
@@ -238,7 +245,18 @@ function getItemsWithSaleInfo() {
 
   return items.map((item) => {
     const latest = latestStmt.get(item.id);
-    if (!latest) return { ...item, price: null, availability: null, onSale: false, discountPct: null, newlyAvailable: false, saleType: null };
+    if (!latest)
+      return {
+        ...item,
+        price: null,
+        availability: null,
+        onSale: false,
+        discountPct: null,
+        newlyAvailable: false,
+        saleType: null,
+        isNewItem: isNewItem(item.first_seen_at),
+        newSince: item.first_seen_at,
+      };
 
     // Primäres Signal: RSI selbst liefert für dieses Item mehrere Preis-Tiers
     // unter den "Standalone-Ships"-Angeboten (z.B. ein günstigerer, nicht
@@ -331,6 +349,8 @@ function getItemsWithSaleInfo() {
       saleType,
       warbondPriceUsd,
       storeCreditPriceUsd,
+      isNewItem: isNewItem(item.first_seen_at),
+      newSince: item.first_seen_at,
     };
   });
 }

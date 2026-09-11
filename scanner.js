@@ -86,10 +86,22 @@ function extractListingItems(html) {
       : null;
     // Herstellername ist nirgends als Klartext im Listing-Fragment vorhanden,
     // nur als Logo-Bild -- der Dateiname des Logos IST der Name (z.B.
-    // ".../icon/Kruger.png" -> "Kruger").
-    const manufacturerName = manufacturerLogoUrl
+    // ".../icon/Kruger.png" -> "Kruger"). Manche Schiffe referenzieren aber
+    // ein generisches Platzhalter-/Skin-Icon statt eines echten Hersteller-
+    // Logos (z.B. "Mfr_greysmarket_icon_grunge_white_4k.png",
+    // "Skin-Banu-...png", nacktes "icon.png") -- die als Herstellername
+    // auszugeben wäre irreführend, deshalb rausfiltern.
+    let manufacturerName = manufacturerLogoUrl
       ? decodeURIComponent(manufacturerLogoUrl.split("/").pop().replace(/\.[a-zA-Z0-9]+$/, ""))
       : null;
+    if (manufacturerName) {
+      manufacturerName = manufacturerName
+        .replace(/[_-]?logo$/i, "")
+        .replace(/[_-]+/g, " ")
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      if (/greysmarket|grunge|^icon$|^skin\b/i.test(manufacturerName)) manufacturerName = null;
+    }
 
     items.push({
       id,

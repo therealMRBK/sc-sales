@@ -299,6 +299,7 @@ app.get("/api/items", (req, res) => {
   );
   items.sort((a, b) => {
     if (a.onSale !== b.onSale) return a.onSale ? -1 : 1;
+    if (a.isNewItem !== b.isNewItem) return a.isNewItem ? -1 : 1;
     if (a.newlyAvailable !== b.newlyAvailable) return a.newlyAvailable ? -1 : 1;
     return (a.name || "").localeCompare(b.name || "");
   });
