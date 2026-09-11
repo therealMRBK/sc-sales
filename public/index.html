@@ -982,10 +982,11 @@
   }
 
   function applyFilters(items) {
-    // The "sales" tab is exclusively sale items (or newly-back-in-stock ones)
-    // -- no toggle to see everything there anymore. "fleet" shows the full
-    // catalog, where isNewItem drives the NEW badge instead.
-    let result = activeTab === "sales" ? items.filter((i) => i.onSale || i.newlyAvailable) : items.slice();
+    // The "sales" tab is exclusively actual price sales -- "new" in any
+    // sense (newlyAvailable stock flip, or isNewItem first-seen) is not a
+    // sale and does not belong here. "fleet" shows the full catalog, where
+    // both new-ish badges render regardless of tab.
+    let result = activeTab === "sales" ? items.filter((i) => i.onSale) : items.slice();
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       result = result.filter((i) => i.name.toLowerCase().includes(q));
