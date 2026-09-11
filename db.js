@@ -324,7 +324,18 @@ function getItemsWithSaleInfo() {
         break;
       }
     }
+    // Bug-Fix: war die allererste je aufgezeichnete Zeile eines Items schon
+    // OutOfStock (z.B. weil der Tracker erst seit kurzem läuft / die DB neu
+    // aufgesetzt wurde), zählte das bisher fälschlich als "war länger nicht
+    // verfügbar" -- das ist aber keine echte Beobachtung, nur ein Artefakt
+    // des Trackingstarts. Ein Item ist deshalb erst ab dem Moment für "neu
+    // verfügbar" eligible, ab dem first_seen_at selbst mindestens
+    // NEWLY_AVAILABLE_WINDOW_DAYS zurückliegt -- garantiert einen echten
+    // Beobachtungszeitraum vor dem Wechsel.
+    const trackedLongEnough =
+      Date.now() - new Date(item.first_seen_at).getTime() >= NEWLY_AVAILABLE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     const newlyAvailable =
+      trackedLongEnough &&
       latest.availability === "InStock" &&
       flipToInStockAt != null &&
       everOutOfStock &&
