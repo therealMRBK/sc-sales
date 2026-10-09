@@ -15,6 +15,7 @@ const {
   deleteHangarItem,
   getHangarItems,
 } = require("./db");
+const { postNewSales } = require("./discord");
 const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
@@ -306,6 +307,39 @@ app.get("/api/items", (req, res) => {
   res.json({ items, fxRate: rate });
 });
 
+// Aktuelle Sales (Preis gesenkt, Rabatt-Tier, wieder einzeln kaufbar) für andere Seiten, z.B. urmtek.org
+app.get("/api/sales", (req, res) => {
+  const fx = getExchangeRate();
+  const rate = fx ? fx.usdToEur : null;
+  const items = getItemsWithSaleInfo()
+    .filter((i) => i.onSale || i.newlyAvailable)
+    .map((item) =>
+      withGermanPricing(item, rate, [
+        ["price", "priceEurInclVat"],
+        ["baselinePrice", "baselinePriceEurInclVat"],
+      ])
+    )
+    .sort((a, b) => (b.discountPct || 0) - (a.discountPct || 0) || (a.name || "").localeCompare(b.name || ""))
+    .map((i) => ({
+      id: i.id,
+      name: i.name,
+      url: i.url,
+      image: i.image ? (i.image.startsWith("http") ? i.image : "https://robertsspaceindustries.com" + i.image) : null,
+      manufacturer: i.manufacturer_name,
+      focus: i.focus,
+      price: i.price,
+      baselinePrice: i.baselinePrice,
+      discountPct: i.discountPct,
+      priceEurInclVat: i.priceEurInclVat,
+      baselinePriceEurInclVat: i.baselinePriceEurInclVat,
+      onSale: i.onSale,
+      newlyAvailable: i.newlyAvailable,
+      saleType: i.saleType,
+    }));
+  res.set("Access-Control-Allow-Origin", "*");
+  res.json({ updatedAt: getMeta("last_scan_at"), items });
+});
+
 app.get("/api/calendar", (req, res) => {
   res.json({
     recurringEvents: RECURRING_EVENTS,
@@ -362,6 +396,10 @@ app.listen(PORT, () => {
 // Zyklus mal länger als das Intervall dauert.
 async function runCycle() {
   await runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
+  {
+    const fx = getExchangeRate();
+    await postNewSales(fx ? fx.usdToEur : null).catch((err) => console.error("[discord] fehlgeschlagen:", err));
+  }
   await scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
 
   const lastShipMatrixRun = getMeta("last_ship_matrix_run_at");
