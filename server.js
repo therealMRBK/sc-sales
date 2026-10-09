@@ -20,6 +20,7 @@ const { updateCalendarPost } = require("./discord-calendar");
 const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
+const { startStatusMonitor } = require("./status-monitor");
 const { getEventPages, getEventPage, refreshEventPages } = require("./event-pages");
 
 const PORT = process.env.PORT || 3000;
@@ -394,6 +395,7 @@ app.get("/api/stats", (req, res) => {
 app.listen(PORT, () => {
   console.log(`sc-sales läuft auf Port ${PORT}`);
   scheduleScans();
+  startStatusMonitor();
 });
 
 // Ein einziger, selbst-nachplanender Zyklus statt mehrerer setInterval --

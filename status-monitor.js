@@ -1,0 +1,184 @@
+// Watches status.robertsspaceindustries.com (cState: index.json + RSS) and keeps a Discord channel current:
+//  - one status message (Platform, Persistent Universe, Arena Commander), edited in place when something changes
+//  - a new message when RSI opens an incident or maintenance, edited while it gets updates,
+//    and another new message when it is resolved.
+// Plain polling every minute, no AI.
+const crypto = require("crypto");
+const { getMeta, setMeta } = require("./db");
+
+const WEBHOOK = (process.env.DISCORD_STATUS_WEBHOOK_URL || "").trim().split("?")[0];
+const INTERVAL_MS = Number(process.env.STATUS_INTERVAL_SECONDS || 60) * 1000;
+const NAME = process.env.DISCORD_POST_NAME || "URMTeK Status";
+const AVATAR = process.env.DISCORD_AVATAR_URL || "https://urmtek.org/discord-app-icon.png";
+const BASE = "https://status.robertsspaceindustries.com";
+const WATCHED = ["Platform", "Persistent Universe", "Arena Commander"];
+const UA = "urmtek-status-monitor/1.0";
+
+const STATE = {
+  operational: { icon: "🟢", text: "Operational", color: 0x2ecc71 },
+  maintenance: { icon: "🔧", text: "Maintenance", color: 0x3b82f6 },
+  notice: { icon: "ℹ️", text: "Notice", color: 0x3b82f6 },
+  disrupted: { icon: "🟠", text: "Disrupted", color: 0xe67e22 },
+  degraded: { icon: "🟠", text: "Degraded", color: 0xe67e22 },
+  down: { icon: "🔴", text: "Down", color: 0xe74c3c },
+};
+const st = (s) => STATE[s] || { icon: "⚪", text: String(s || "unknown"), color: 0x95a5a6 };
+const WORST = ["down", "disrupted", "degraded", "maintenance", "notice", "operational"];
+
+async function getJson(url) {
+  const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+  return JSON.parse((await res.text()).trim());
+}
+
+const decode = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const htmlToText = (h) =>
+  decode(h)
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\/p>|<br\s*\/?>|<\/li>/gi, "\n")
+    .replace(/<li>/gi, "• ")
+    .replace(/<\/?strong>|<\/?b>/gi, "**")
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+/** The incident text (with all updates) from the RSS feed, keyed by the issue folder name. */
+async function incidentTexts() {
+  const res = await fetch(`${BASE}/index.xml`, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20000) });
+  if (!res.ok) return {};
+  const xml = await res.text();
+  const out = {};
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const guid = /<guid>([^<]+)<\/guid>/.exec(m[1])?.[1];
+    const desc = /<description>([\s\S]*?)<\/description>/.exec(m[1])?.[1];
+    if (guid && desc) out[guid.replace(/\/$/, "")] = htmlToText(desc);
+  }
+  return out;
+}
+const keyOf = (permalink) => permalink.replace(/\/index\.html$/, "").replace(/\/$/, "");
+
+async function send(method, url, body) {
+  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+  if (res.status === 429) {
+    const wait = Number((await res.json().catch(() => ({}))).retry_after || 2);
+    await new Promise((r) => setTimeout(r, Math.ceil(wait * 1000) + 200));
+    return send(method, url, body);
+  }
+  return res;
+}
+async function post(payload) {
+  const res = await send("POST", `${WEBHOOK}?wait=true`, { username: NAME, avatar_url: AVATAR, allowed_mentions: { parse: [] }, ...payload });
+  if (!res.ok) throw new Error(`Discord post HTTP ${res.status}`);
+  return (await res.json()).id;
+}
+async function edit(id, payload) {
+  const res = await send("PATCH", `${WEBHOOK}/messages/${id}`, { allowed_mentions: { parse: [] }, ...payload });
+  if (res.status === 404) return false; // message was deleted by hand
+  if (!res.ok) throw new Error(`Discord edit HTTP ${res.status}`);
+  return true;
+}
+
+const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const sha = (o) => crypto.createHash("sha1").update(JSON.stringify(o)).digest("hex");
+
+function statusEmbed(systems, active) {
+  const watched = WATCHED.map((n) => systems.find((s) => s.name === n)).filter(Boolean);
+  const worst = WORST.find((w) => watched.some((s) => s.status === w)) || "operational";
+  const lines = watched.map((s) => `${st(s.status).icon} **${s.name}**: ${st(s.status).text}`);
+  const embed = {
+    title: "RSI server status",
+    url: BASE,
+    color: st(worst).color,
+    description: lines.join("\n"),
+    footer: { text: "Checked every minute · status.robertsspaceindustries.com" },
+  };
+  if (active.length) embed.fields = [{ name: "Open incidents", value: clip(active.map((i) => `• [${i.title}](${i.permalink}) (${i.affected.join(", ")})`).join("\n"), 1000) }];
+  return embed;
+}
+
+function incidentEmbed(inc, text, resolved) {
+  const sev = st(inc.severity);
+  return {
+    title: `${resolved ? "✅ Resolved: " : `${sev.icon} `}${inc.title}`,
+    url: inc.permalink,
+    color: resolved ? 0x2ecc71 : sev.color,
+    description: clip(text || "No details yet.", 3500),
+    fields: [
+      { name: "Affects", value: inc.affected.join(", ") || "n/a", inline: true },
+      { name: "Type", value: sev.text, inline: true },
+    ],
+    footer: { text: "RSI status page" },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+let running = false;
+async function checkStatus(log = console.log) {
+  if (!WEBHOOK || running) return;
+  running = true;
+  try {
+    const idx = await getJson(`${BASE}/index.json`);
+    const systems = idx.systems || [];
+    const open = new Map();
+    for (const s of systems) for (const i of s.unresolvedIssues || []) if (!i.resolved) open.set(i.permalink, i);
+    const active = [...open.values()].map((i) => ({ ...i, affected: i.affected || [] }));
+
+    const state = JSON.parse(getMeta("rsi_status_state") || "{}");
+    state.incidents ||= {};
+    const needTexts = active.length > 0 || Object.values(state.incidents).some((x) => !x.resolved);
+    const texts = needTexts ? await incidentTexts().catch(() => ({})) : {};
+
+    // 1) incidents: new -> post, changed -> edit in place, gone -> resolved
+    for (const inc of active) {
+      const text = texts[keyOf(inc.permalink)] || "";
+      const known = state.incidents[inc.permalink];
+      const hash = sha([text, inc.severity, inc.affected]);
+      if (!known) {
+        const id = await post({ embeds: [incidentEmbed(inc, text, false)] });
+        state.incidents[inc.permalink] = { msgId: id, hash, resolved: false, title: inc.title, severity: inc.severity, affected: inc.affected };
+        log(`[status] new incident: ${inc.title}`);
+      } else if (known.hash !== hash) {
+        if (known.msgId) await edit(known.msgId, { embeds: [incidentEmbed(inc, text, false)] });
+        known.hash = hash;
+        log(`[status] incident updated: ${inc.title}`);
+      }
+    }
+    for (const [link, known] of Object.entries(state.incidents)) {
+      if (known.resolved || open.has(link)) continue;
+      const text = texts[keyOf(link)] || "";
+      const inc = { title: known.title.replace(/^\[Resolved\]\s*/i, ""), permalink: link, severity: known.severity, affected: known.affected || [] };
+      if (known.msgId) await edit(known.msgId, { embeds: [incidentEmbed(inc, text, true)] });
+      await post({ embeds: [incidentEmbed(inc, text, true)] });
+      known.resolved = true;
+      known.resolvedAt = new Date().toISOString();
+      log(`[status] incident resolved: ${inc.title}`);
+    }
+    // keep the state small: forget incidents resolved more than 3 days ago
+    for (const [link, k] of Object.entries(state.incidents)) if (k.resolved && Date.now() - new Date(k.resolvedAt).getTime() > 3 * 86400000) delete state.incidents[link];
+
+    // 2) the status message
+    const embed = statusEmbed(systems, active);
+    const hash = sha(embed);
+    if (state.statusHash !== hash || !state.statusMsgId) {
+      const ok = state.statusMsgId ? await edit(state.statusMsgId, { embeds: [embed] }) : false;
+      if (!ok) state.statusMsgId = await post({ embeds: [embed] });
+      state.statusHash = hash;
+      log("[status] status message updated");
+    }
+    setMeta("rsi_status_state", JSON.stringify(state));
+  } catch (e) {
+    log(`[status] ${e.message}`);
+  } finally {
+    running = false;
+  }
+}
+
+function startStatusMonitor(log = console.log) {
+  if (!WEBHOOK) return log("[status] no DISCORD_STATUS_WEBHOOK_URL, monitor off");
+  setTimeout(() => checkStatus(log), 3000);
+  setInterval(() => checkStatus(log), INTERVAL_MS);
+  log(`[status] monitor on, every ${INTERVAL_MS / 1000}s`);
+}
+
+module.exports = { startStatusMonitor, checkStatus };
