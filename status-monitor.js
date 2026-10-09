@@ -43,17 +43,22 @@ const htmlToText = (h) =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-/** The incident text (with all updates) from the RSS feed, keyed by the issue folder name. */
+/** The incident text (with all updates) from the RSS feed, keyed by the issue folder name; `recent` = newest items. */
 async function incidentTexts() {
   const res = await fetch(`${BASE}/index.xml`, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) return {};
   const xml = await res.text();
   const out = {};
+  const recent = [];
   for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
     const guid = /<guid>([^<]+)<\/guid>/.exec(m[1])?.[1];
     const desc = /<description>([\s\S]*?)<\/description>/.exec(m[1])?.[1];
+    const title = /<title>([^<]*)<\/title>/.exec(m[1])?.[1];
+    const date = /<pubDate>([^<]*)<\/pubDate>/.exec(m[1])?.[1];
     if (guid && desc) out[guid.replace(/\/$/, "")] = htmlToText(desc);
+    if (guid && title && recent.length < 6) recent.push({ title: decode(title), link: guid, ts: Math.floor(new Date(date).getTime() / 1000) });
   }
+  Object.defineProperty(out, "__recent", { value: recent, enumerable: false });
   return out;
 }
 const keyOf = (permalink) => permalink.replace(/\/index\.html$/, "").replace(/\/$/, "");
@@ -82,19 +87,36 @@ async function edit(id, payload) {
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const sha = (o) => crypto.createHash("sha1").update(JSON.stringify(o)).digest("hex");
 
-function statusEmbed(systems, active) {
+/** The status message: systems, the full text of every open incident (like the website) and the latest history. */
+function statusEmbeds(systems, active, texts) {
   const watched = WATCHED.map((n) => systems.find((s) => s.name === n)).filter(Boolean);
   const worst = WORST.find((w) => watched.some((s) => s.status === w)) || "operational";
   const lines = watched.map((s) => `${st(s.status).icon} **${s.name}**: ${st(s.status).text}`);
-  const embed = {
+  const head = {
     title: "RSI server status",
     url: BASE,
     color: st(worst).color,
-    description: lines.join("\n"),
-    footer: { text: "Checked every minute · status.robertsspaceindustries.com" },
+    description: lines.join("\n") + (active.length ? "" : "\n\nNo open incidents."),
+    footer: { text: "Updated every minute · status.robertsspaceindustries.com" },
   };
-  if (active.length) embed.fields = [{ name: "Open incidents", value: clip(active.map((i) => `• [${i.title}](${i.permalink}) (${i.affected.join(", ")})`).join("\n"), 1000) }];
-  return embed;
+  // Discord allows 6000 characters over all embeds of a message
+  const budget = Math.max(600, Math.floor((5200 - 400) / Math.max(1, active.length)));
+  const embeds = [head];
+  for (const inc of active.slice(0, 5)) {
+    const sev = st(inc.severity);
+    embeds.push({
+      title: `${sev.icon} ${inc.title}`,
+      url: inc.permalink,
+      color: sev.color,
+      description: clip(texts[keyOf(inc.permalink)] || "No details yet.", Math.min(budget, 3800)),
+      fields: [{ name: "Affects", value: inc.affected.join(", ") || "n/a", inline: true }, { name: "Type", value: sev.text, inline: true }],
+    });
+  }
+  const recent = texts.__recent || [];
+  if (recent.length && embeds.length < 7) {
+    embeds[embeds.length - 1].fields = [...(embeds[embeds.length - 1].fields || []), { name: "Recent history", value: clip(recent.map((r) => `<t:${r.ts}:d> [${r.title}](${r.link})`).join("\n"), 1000) }];
+  }
+  return embeds;
 }
 
 function incidentEmbed(inc, text, resolved) {
@@ -126,8 +148,7 @@ async function checkStatus(log = console.log) {
 
     const state = JSON.parse(getMeta("rsi_status_state") || "{}");
     state.incidents ||= {};
-    const needTexts = active.length > 0 || Object.values(state.incidents).some((x) => !x.resolved);
-    const texts = needTexts ? await incidentTexts().catch(() => ({})) : {};
+    const texts = await incidentTexts().catch(() => ({}));
 
     // 1) incidents: new -> post, changed -> edit in place, gone -> resolved
     for (const inc of active) {
@@ -158,11 +179,11 @@ async function checkStatus(log = console.log) {
     for (const [link, k] of Object.entries(state.incidents)) if (k.resolved && Date.now() - new Date(k.resolvedAt).getTime() > 3 * 86400000) delete state.incidents[link];
 
     // 2) the status message
-    const embed = statusEmbed(systems, active);
-    const hash = sha(embed);
+    const embeds = statusEmbeds(systems, active, texts);
+    const hash = sha(embeds);
     if (state.statusHash !== hash || !state.statusMsgId) {
-      const ok = state.statusMsgId ? await edit(state.statusMsgId, { embeds: [embed] }) : false;
-      if (!ok) state.statusMsgId = await post({ embeds: [embed] });
+      const ok = state.statusMsgId ? await edit(state.statusMsgId, { embeds }) : false;
+      if (!ok) state.statusMsgId = await post({ embeds });
       state.statusHash = hash;
       log("[status] status message updated");
     }
