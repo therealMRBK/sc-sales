@@ -324,7 +324,7 @@ app.get("/api/sales", (req, res) => {
       id: i.id,
       name: i.name,
       url: i.url,
-      image: i.image ? (i.image.startsWith("http") ? i.image : "https://robertsspaceindustries.com" + i.image) : null,
+      image: i.image ? (i.image.startsWith("http") ? i.image : (process.env.PUBLIC_BASE_URL || "https://star.bravokilo.cloud").replace(/\/$/, "") + i.image) : null,
       manufacturer: i.manufacturer_name,
       focus: i.focus,
       price: i.price,

@@ -12,6 +12,9 @@ const MAX_PER_RUN = Number(process.env.DISCORD_MAX_PER_RUN || 10);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const usd = (n) => (n == null ? "?" : `$${Number(n).toFixed(0)}`);
 const eur = (usd_, rate) => (usd_ == null || !rate ? null : `${(usd_ * rate * 1.19).toFixed(0)} €`);
+// Die Schiffsbilder liegen lokal im Tracker (der Scanner lädt sie von RSI und liefert sie unter /media/ships/ aus)
+const PUBLIC = (process.env.PUBLIC_BASE_URL || "https://star.bravokilo.cloud").replace(/\/$/, "");
+const imageUrl = (item) => (item.image ? (item.image.startsWith("http") ? item.image : PUBLIC + item.image) : null);
 
 function readPosted() {
   try {
@@ -23,29 +26,30 @@ function readPosted() {
 
 function keyOf(item) {
   // Preis, Art und ob neu verfügbar: ändert sich eines davon, ist es eine neue Meldung
-  return `${item.id}:${item.price}:${item.saleType || "-"}:${item.newlyAvailable ? "new" : "-"}`;
+  return `v2:${item.id}:${item.price}:${item.saleType || "-"}:${item.newlyAvailable ? "new" : "-"}`;
 }
 
 function embedOf(item, rate) {
   const lines = [];
   if (item.onSale) {
-    const was = item.baselinePrice != null ? ` (statt ${usd(item.baselinePrice)})` : "";
-    lines.push(`**${usd(item.price)}**${was}${item.discountPct ? ` · **-${item.discountPct} %**` : ""}`);
+    const was = item.baselinePrice != null ? ` (was ${usd(item.baselinePrice)})` : "";
+    lines.push(`**${usd(item.price)}**${was}${item.discountPct ? ` · **-${item.discountPct}%**` : ""}`);
     const e = eur(item.price, rate);
-    if (e) lines.push(`≈ ${e} inkl. MwSt.`);
-    if (item.saleType === "listed_discount") lines.push("RSI listet zwei Preise (Warbond/Rabatt gegen Store Credit).");
-    if (item.saleType === "price_drop") lines.push("Preis ist unter den üblichen Preis gefallen.");
+    if (e) lines.push(`≈ ${e} incl. VAT`);
+    if (item.saleType === "listed_discount") lines.push("RSI lists two prices (discounted vs. store credit).");
+    if (item.saleType === "price_drop") lines.push("The price dropped below its usual level.");
   }
-  if (item.newlyAvailable) lines.push("Wieder einzeln kaufbar.");
-  const title = `${item.name}${item.discountPct ? ` -${item.discountPct} %` : item.newlyAvailable ? " wieder verfügbar" : ""}`;
+  if (item.newlyAvailable) lines.push("Can be bought on its own again.");
+  const title = `${item.name}${item.discountPct ? ` -${item.discountPct}%` : item.newlyAvailable ? " is available again" : ""}`;
   const embed = {
     title: title.slice(0, 250),
     url: item.url,
-    description: `${lines.join("\n")}\n\n[Zum RSI-Pledge-Store](${item.url})`.slice(0, 3900),
+    description: `${lines.join("\n")}\n\n[Open in the RSI pledge store](${item.url})`.slice(0, 3900),
     color: item.onSale ? 0xc0392b : 0x2d9cdb,
-    footer: { text: [item.manufacturer_name, item.focus].filter(Boolean).join(" · ") || "Star Citizen Pledge Store" },
+    footer: { text: [item.manufacturer_name, item.focus].filter(Boolean).join(" · ") || "Star Citizen pledge store" },
   };
-  if (item.image) embed.thumbnail = { url: item.image.startsWith("http") ? item.image : RSI + item.image };
+  const img = imageUrl(item);
+  if (img) embed.image = { url: img };
   return embed;
 }
 
