@@ -9,6 +9,9 @@ services:
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       # Second channel: the event calendar (one message that is edited when something changes)
       DISCORD_CALENDAR_WEBHOOK_URL: ${DISCORD_CALENDAR_WEBHOOK_URL:-}
+      # Optional: lets an AI keep the event pages up to date (Claude Haiku, a few cents a month)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MEMBERS_CALENDAR_URL: ${MEMBERS_CALENDAR_URL:-https://urmtek.org/members/calendar}
     volumes:
       - sc_sales_data:/data
     ports:

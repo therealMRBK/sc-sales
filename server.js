@@ -20,6 +20,7 @@ const { updateCalendarPost } = require("./discord-calendar");
 const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
+const { getEventPages, getEventPage, refreshEventPages } = require("./event-pages");
 
 const PORT = process.env.PORT || 3000;
 const SCAN_INTERVAL_MINUTES = Number(process.env.SCAN_INTERVAL_MINUTES || 60);
@@ -349,6 +350,13 @@ app.get("/api/calendar", (req, res) => {
   });
 });
 
+app.get("/api/events", (req, res) => res.json({ events: getEventPages() }));
+app.get("/api/events/:slug", (req, res) => {
+  const page = getEventPage(req.params.slug);
+  if (!page) return res.status(404).json({ error: "unknown event" });
+  res.json(page);
+});
+
 app.get("/api/items/:id/history", (req, res) => {
   const result = getItemHistory(req.params.id);
   if (!result) return res.status(404).json({ error: "unknown item" });
@@ -402,6 +410,7 @@ async function runCycle() {
     await postNewSales(fx ? fx.usdToEur : null).catch((err) => console.error("[discord] fehlgeschlagen:", err));
   }
   await scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
+  await refreshEventPages().catch((err) => console.error("[events] fehlgeschlagen:", err));
   await updateCalendarPost().catch((err) => console.error("[discord-calendar] fehlgeschlagen:", err));
 
   const lastShipMatrixRun = getMeta("last_ship_matrix_run_at");
