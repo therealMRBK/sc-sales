@@ -119,13 +119,14 @@ function statusEmbeds(systems, active, texts) {
   return embeds;
 }
 
-function incidentEmbed(inc, text, resolved) {
+/** Short notification only; the full text lives in the status message. */
+function incidentEmbed(inc, resolved) {
   const sev = st(inc.severity);
   return {
-    title: `${resolved ? "✅ Resolved: " : `${sev.icon} `}${inc.title}`,
+    title: `${resolved ? "✅ Resolved: " : `${sev.icon} New: `}${inc.title}`,
     url: inc.permalink,
     color: resolved ? 0x2ecc71 : sev.color,
-    description: clip(text || "No details yet.", 3500),
+    description: resolved ? "RSI marked this as resolved." : "Details are in the live status message above.",
     fields: [
       { name: "Affects", value: inc.affected.join(", ") || "n/a", inline: true },
       { name: "Type", value: sev.text, inline: true },
@@ -150,27 +151,20 @@ async function checkStatus(log = console.log) {
     state.incidents ||= {};
     const texts = await incidentTexts().catch(() => ({}));
 
-    // 1) incidents: new -> post, changed -> edit in place, gone -> resolved
+    // 1) incidents: new -> short notice, gone -> notice replaced by a "Resolved" one (the live message carries the text)
     for (const inc of active) {
-      const text = texts[keyOf(inc.permalink)] || "";
       const known = state.incidents[inc.permalink];
-      const hash = sha([text, inc.severity, inc.affected]);
       if (!known) {
-        const id = await post({ embeds: [incidentEmbed(inc, text, false)] });
-        state.incidents[inc.permalink] = { msgId: id, hash, resolved: false, title: inc.title, severity: inc.severity, affected: inc.affected };
+        const id = await post({ embeds: [incidentEmbed(inc, false)] });
+        state.incidents[inc.permalink] = { msgId: id, resolved: false, title: inc.title, severity: inc.severity, affected: inc.affected };
         log(`[status] new incident: ${inc.title}`);
-      } else if (known.hash !== hash) {
-        if (known.msgId) await edit(known.msgId, { embeds: [incidentEmbed(inc, text, false)] });
-        known.hash = hash;
-        log(`[status] incident updated: ${inc.title}`);
       }
     }
     for (const [link, known] of Object.entries(state.incidents)) {
       if (known.resolved || open.has(link)) continue;
-      const text = texts[keyOf(link)] || "";
       const inc = { title: known.title.replace(/^\[Resolved\]\s*/i, ""), permalink: link, severity: known.severity, affected: known.affected || [] };
-      if (known.msgId) await edit(known.msgId, { embeds: [incidentEmbed(inc, text, true)] });
-      await post({ embeds: [incidentEmbed(inc, text, true)] });
+      if (known.msgId) await send("DELETE", `${WEBHOOK}/messages/${known.msgId}`); // the "New" notice is replaced by the "Resolved" one
+      await post({ embeds: [incidentEmbed(inc, true)] });
       known.resolved = true;
       known.resolvedAt = new Date().toISOString();
       log(`[status] incident resolved: ${inc.title}`);
