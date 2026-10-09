@@ -64,7 +64,7 @@ async function incidentTexts() {
 const keyOf = (permalink) => permalink.replace(/\/index\.html$/, "").replace(/\/$/, "");
 
 async function send(method, url, body) {
-  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(20000) });
   if (res.status === 429) {
     const wait = Number((await res.json().catch(() => ({}))).retry_after || 2);
     await new Promise((r) => setTimeout(r, Math.ceil(wait * 1000) + 200));
@@ -195,8 +195,23 @@ async function checkStatus(log = console.log) {
   }
 }
 
-function startStatusMonitor(log = console.log) {
+/** One-time clean slate: deletes every message this monitor posted and forgets its state (runs when RESET_TOKEN changes). */
+async function resetIfRequested(log) {
+  const token = (process.env.DISCORD_STATUS_RESET_TOKEN || "").trim();
+  if (!token || getMeta("rsi_status_reset_done") === token) return;
+  const state = JSON.parse(getMeta("rsi_status_state") || "{}");
+  const ids = [state.statusMsgId, ...Object.values(state.incidents || {}).map((i) => i.msgId)].filter(Boolean);
+  for (const id of ids) {
+    const res = await send("DELETE", `${WEBHOOK}/messages/${id}`);
+    log(`[status] reset: deleted message ${id} (HTTP ${res.status})`);
+  }
+  setMeta("rsi_status_state", "{}");
+  setMeta("rsi_status_reset_done", token);
+}
+
+async function startStatusMonitor(log = console.log) {
   if (!WEBHOOK) return log("[status] no DISCORD_STATUS_WEBHOOK_URL, monitor off");
+  await resetIfRequested(log).catch((e) => log(`[status] reset failed: ${e.message}`));
   setTimeout(() => checkStatus(log), 3000);
   setInterval(() => checkStatus(log), INTERVAL_MS);
   log(`[status] monitor on, every ${INTERVAL_MS / 1000}s`);
