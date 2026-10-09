@@ -16,6 +16,7 @@ const {
   getHangarItems,
 } = require("./db");
 const { postNewSales } = require("./discord");
+const { updateCalendarPost } = require("./discord-calendar");
 const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
@@ -401,6 +402,7 @@ async function runCycle() {
     await postNewSales(fx ? fx.usdToEur : null).catch((err) => console.error("[discord] fehlgeschlagen:", err));
   }
   await scanCommLink().catch((err) => console.error("[comm-link] fehlgeschlagen:", err));
+  await updateCalendarPost().catch((err) => console.error("[discord-calendar] fehlgeschlagen:", err));
 
   const lastShipMatrixRun = getMeta("last_ship_matrix_run_at");
   const dueForShipMatrix =

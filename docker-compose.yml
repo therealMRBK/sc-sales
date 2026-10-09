@@ -7,6 +7,8 @@ services:
       SCAN_REQUEST_DELAY_MS: ${SCAN_REQUEST_DELAY_MS:-400}
       # Discord channel for new sales (webhook URL, set in the stack's environment, never in git)
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      # Second channel: the event calendar (one message that is edited when something changes)
+      DISCORD_CALENDAR_WEBHOOK_URL: ${DISCORD_CALENDAR_WEBHOOK_URL:-}
     volumes:
       - sc_sales_data:/data
     ports:
