@@ -11,6 +11,7 @@ services:
       DISCORD_CALENDAR_WEBHOOK_URL: ${DISCORD_CALENDAR_WEBHOOK_URL:-}
       # Channel with the live RSI server status (webhook URL, set in the stack's environment)
       DISCORD_STATUS_WEBHOOK_URL: ${DISCORD_STATUS_WEBHOOK_URL:-}
+      DISCORD_STATUS_RESET_TOKEN: ${DISCORD_STATUS_RESET_TOKEN:-}
       # Optional: lets an AI keep the event pages up to date (Claude Haiku, a few cents a month)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       MEMBERS_CALENDAR_URL: ${MEMBERS_CALENDAR_URL:-https://urmtek.org/members/calendar}
