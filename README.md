@@ -44,6 +44,22 @@ Zweiter Tab in der UI, drei Quellen, keine erfundenen Termine:
   keine verbindlichen Release-Termine für Schiffe in Entwicklung. Diese
   Liste zeigt entsprechend nur Status + Hinweis, nie ein erfundenes Datum.
 
+### Eventseiten mit KI (`event-pages.js`, optional)
+
+Mit `ANTHROPIC_API_KEY` läuft einmal täglich (`EVENT_AI_INTERVAL_HOURS`,
+Default 24) eine Recherche für jedes Event der nächsten Monate: passende
+Comm-Links und feste Quellen werden gelesen, dazu sucht Claude Haiku im Web
+(`EVENT_AI_SEARCHES` Suchen pro Event, Default 3) nach RSI-Ankündigungen,
+Datamining/Leaks und Community-News. Ergebnis: aktualisierte Seite plus
+eine `news`-Liste (`official` / `leak` / `rumor`, neueste zuerst). Gerüchte
+landen nur in den News, nie im Zeitplan. Ein Suchlauf findet außerdem neue
+Events, die noch keine Seite haben. Events, die seit über zwei Wochen vorbei
+sind, werden nicht mehr recherchiert. Ändern sich Prompt oder Modell, läuft
+die Recherche direkt nach dem Deploy statt erst nach Ablauf des Intervalls.
+Kosten: vor allem die Websuchen (~$10 pro 1000), mit den Defaults etwa
+$5–8 im Monat. Die Seiten zeigt urmtek.org unter `/members/calendar/<slug>`
+(`GET /api/events`).
+
 ## Account, Hangar & Upgrade-Rechner
 
 Vierter Tab. Eigenes, schlankes Session-System (kein express-session/

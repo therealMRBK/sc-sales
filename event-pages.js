@@ -1,8 +1,8 @@
 // One detail page per event. The recurring events from events.js are the skeleton (what usually happens, when);
-// an optional AI step (needs ANTHROPIC_API_KEY) reads fresh sources (RSI Comm-Links and a few fixed news pages),
-// keeps the page up to date and creates pages for events nobody listed yet. Without a key the pages simply show the
-// static data, nothing breaks.
-const crypto = require("crypto");
+// an optional AI step (needs ANTHROPIC_API_KEY) runs once a day: it reads RSI Comm-Links and a few fixed pages, searches
+// the web for news, leaks and datamining about each upcoming event, keeps the page up to date (including a news list)
+// and creates pages for events nobody listed yet. Without a key the pages simply show the static data, nothing breaks.
+const Anthropic = require("@anthropic-ai/sdk");
 const { db, getRecentAnnouncements, getMeta, setMeta } = require("./db");
 const RECURRING = require("./events");
 
@@ -15,7 +15,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS event_pages (
 );`);
 
 const KEY = (process.env.ANTHROPIC_API_KEY || "").trim();
-const MODEL = process.env.EVENT_AI_MODEL || "claude-haiku-4-5-20251001";
+const MODEL = process.env.EVENT_AI_MODEL || "claude-haiku-5-5";
+const INTERVAL_HOURS = Number(process.env.EVENT_AI_INTERVAL_HOURS || 24);
+// Web searches per event and run ($10 per 1000 searches): a handful is enough for one event's news of the day.
+const SEARCHES_PER_EVENT = Number(process.env.EVENT_AI_SEARCHES || 3);
+const client = KEY ? new Anthropic({ apiKey: KEY }) : null;
 const slugify = (s) => s.toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 // Facts we know now (kept short on purpose; the AI step extends and corrects them).
@@ -69,6 +73,7 @@ function base(e) {
     highlights: [],
     schedule: [],
     ships: [],
+    news: [],
     sources: [],
     ...(SEED[slug] || {}),
   };
@@ -115,66 +120,80 @@ async function fetchText(url) {
   }
 }
 
-async function ask(system, user, maxTokens = 3000) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
-    signal: AbortSignal.timeout(90000),
-  });
-  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const text = (await res.json()).content?.map((c) => c.text || "").join("") || "";
+// Web searches made in this run (logged, they are the main cost).
+let searches = 0;
+
+/**
+ * One request; with `search` > 0 Claude may search the web that many times. Server-side searches can pause a long turn
+ * (stop_reason "pause_turn"): the answer so far goes back as the assistant turn and the request continues.
+ */
+async function ask(system, user, { maxTokens = 16000, search = 0 } = {}) {
+  const tools = search > 0 ? [{ type: "web_search_20250305", name: "web_search", max_uses: search }] : undefined;
+  const messages = [{ role: "user", content: user }];
+  let response;
+  for (let turn = 0; turn < 4; turn++) {
+    response = await client.messages.create({ model: MODEL, max_tokens: maxTokens, system, messages, ...(tools ? { tools } : {}) }, { timeout: 180000 });
+    searches += response.usage?.server_tool_use?.web_search_requests || 0;
+    if (response.stop_reason !== "pause_turn") break;
+    messages.push({ role: "assistant", content: response.content });
+  }
+  if (response.stop_reason === "refusal") throw new Error(`AI declined (${response.stop_details?.category ?? "no category"})`);
+  // with web search the answer is spread over several text blocks around the search results
+  const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
   const m = text.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("AI answered without JSON");
+  if (!m) throw new Error(`AI answered without JSON (${response.stop_reason})`);
   return JSON.parse(m[0]);
 }
 
-const SYSTEM = `You maintain event pages for a Star Citizen organization. You get the current page as JSON and fresh source texts.
-Return the updated page as ONE JSON object with exactly these keys: name, status ("official" only if a robertsspaceindustries.com source states the dates, "leaked" if only datamining/community sources, otherwise "expected"), startDate and endDate (YYYY-MM-DD in the game year, or null), location (string or null), summary (2-4 sentences, plain English), highlights (string array), schedule (array of {date, title, detail}), ships (array of {name, maker, date, note}), sales (string or null: what is sold, discounts, how it works), howToJoin (string or null), sources (array of {title, url}, only pages you actually used).
-Use ONLY facts stated in the sources or already on the page. Never invent dates, ships or prices. Keep unknown fields empty. English only.`;
+const SYSTEM = `You maintain event pages for a Star Citizen organization. You get the current page as JSON and source texts, and you may search the web.
+Search for what is new about this event: RSI announcements (robertsspaceindustries.com Comm-Links, Spectrum, This Week in Star Citizen), patch notes, datamining and leaks (game files, PTU/Evocati builds), and community news (Reddit r/starcitizen, starcitizen.tools, news sites). Prefer the last few weeks.
+Return the updated page as ONE JSON object with exactly these keys: name, status ("official" only if a robertsspaceindustries.com source states the dates, "leaked" if only datamining/community sources, otherwise "expected"), startDate and endDate (YYYY-MM-DD in the game year, or null), location (string or null), summary (2-4 sentences, plain English), highlights (string array), schedule (array of {date, title, detail}), ships (array of {name, maker, date, note}), sales (string or null: what is sold, discounts, how it works), howToJoin (string or null), news (array of {date, title, summary, url, kind}), sources (array of {title, url}, only pages you actually used).
+news: the newest findings first, at most 12. date is the real-world publication date (YYYY-MM-DD), summary one or two sentences, kind is "official" (RSI said it), "leak" (datamined or leaked), or "rumor" (unconfirmed community talk). Keep earlier news items of the page unless a newer source shows they were wrong; then drop them.
+Leaked facts may go into schedule and ships, with "leaked" in the note or detail. Rumors stay in news only.
+Use ONLY facts stated in the sources, the search results or already on the page. Never invent dates, ships, prices or URLs. Keep unknown fields empty. English only. Answer with the JSON object and nothing else.`;
 
 const needsKey = () => !KEY;
 
 async function researchOne(page) {
   const kws = [page.name.replace(/\(.*?\)/g, "").trim(), ...(page.name.match(/\((.*?)\)/) ? [page.name.match(/\((.*?)\)/)[1]] : [])].map((s) => s.toLowerCase());
   const ann = getRecentAnnouncements(60).filter((a) => kws.some((k) => a.title.toLowerCase().includes(k)) || (a.matchedKeywords || []).some((k) => kws.includes(k.toLowerCase())));
-  const urls = [...new Set([...ann.slice(0, 3).map((a) => a.url), ...(EXTRA_SOURCES[page.slug] || [])])];
+  const urls = [...new Set([...ann.slice(0, 3).map((a) => a.url), ...(EXTRA_SOURCES[page.slug] || []), ...(page.sources || []).slice(0, 2).map((s) => s.url)])];
   const texts = [];
   for (const u of urls) {
     const t = await fetchText(u);
     if (t && t.length > 400) texts.push({ url: u, text: t });
   }
-  if (!texts.length) return false;
-  const hash = crypto.createHash("sha1").update(texts.map((t) => t.url + t.text).join("|")).digest("hex");
-  const r = row(page.slug);
-  if (r && r.source_hash === hash) return false;
-  const out = await ask(SYSTEM, `Current page:\n${JSON.stringify(page)}\n\nSources:\n${texts.map((t) => `--- ${t.url}\n${t.text}`).join("\n\n")}`);
-  save({ ...page, ...out, slug: page.slug, recurring: page.recurring, majorSale: page.majorSale }, hash);
+  const today = new Date().toISOString().slice(0, 10);
+  const out = await ask(
+    SYSTEM,
+    `Today is ${today}.\n\nCurrent page:\n${JSON.stringify(page)}\n\nSources:\n${texts.length ? texts.map((t) => `--- ${t.url}\n${t.text}`).join("\n\n") : "(none fetched, use the web search)"}`,
+    { search: SEARCHES_PER_EVENT },
+  );
+  save({ ...page, ...out, slug: page.slug, name: page.name, recurring: page.recurring, majorSale: page.majorSale, discovered: page.discovered }, null);
   return true;
 }
 
-/** Titles of new RSI Comm-Links that look like an event or sale nobody has a page for yet. */
+/** New events nobody has a page for yet: from new RSI Comm-Link titles and from a web search for announcements and leaks. */
 async function discover(log) {
   const known = getEventPages().map((p) => p.name);
   const seenKey = "event_discovery_seen";
   const seen = new Set(JSON.parse(getMeta(seenKey) || "[]"));
   const fresh = getRecentAnnouncements(40).filter((a) => !seen.has(a.id));
-  if (!fresh.length) return 0;
   const out = await ask(
-    "You classify Star Citizen news titles. Return ONE JSON object {\"events\":[{\"id\":\"<id>\",\"name\":\"<short official event name>\"}]} listing ONLY titles that announce a store event, sale, free-fly or in-game event that is NOT already one of the known events. Most titles are not events: return an empty list then.",
-    `Known events: ${known.join("; ")}\nTitles:\n${fresh.map((a) => `${a.id} | ${a.title}`).join("\n")}`,
-    800,
+    `You find Star Citizen events. Search the web for store events, sales, free-fly weeks and in-game events that RSI announced, or that leaked or were datamined, in the last two weeks. Also look at the new RSI news titles given to you.
+Return ONE JSON object {"events":[{"name":"<short official event name>","url":"<the page that announces or leaks it>"}]} listing ONLY events that are NOT already one of the known events (also not under another name). Most news is not a new event: return an empty list then. Never invent events or URLs. Answer with the JSON object and nothing else.`,
+    `Today is ${new Date().toISOString().slice(0, 10)}.\nKnown events: ${known.join("; ")}\nNew RSI titles:\n${fresh.map((a) => `${a.title} | ${a.url}`).join("\n") || "(none)"}`,
+    { maxTokens: 8000, search: SEARCHES_PER_EVENT },
   );
   let created = 0;
   for (const ev of out.events || []) {
-    const a = fresh.find((x) => x.id === ev.id);
-    if (!a || !ev.name) continue;
+    if (!ev.name || !/^https?:\/\//.test(ev.url || "")) continue;
     const slug = slugify(ev.name);
-    if (!slug || row(slug)) continue;
-    const page = { slug, name: ev.name, status: "official", recurring: null, majorSale: false, summary: a.title, highlights: [], schedule: [], ships: [], sources: [{ title: a.title, url: a.url }], discovered: true };
-    const text = await fetchText(a.url);
-    const filled = text ? await ask(SYSTEM, `Current page:\n${JSON.stringify(page)}\n\nSources:\n--- ${a.url}\n${text}`).catch(() => null) : null;
-    save(filled ? { ...page, ...filled, slug, recurring: null, discovered: true } : page, null);
+    if (!slug || row(slug) || getEventPages().some((p) => p.slug === slug)) continue;
+    const isRsi = /robertsspaceindustries\.com/.test(ev.url);
+    const page = { slug, name: ev.name, status: isRsi ? "official" : "leaked", recurring: null, majorSale: false, summary: "", highlights: [], schedule: [], ships: [], news: [], sources: [{ title: ev.name, url: ev.url }], discovered: true };
+    save(page, null);
+    await researchOne(page).catch((e) => log(`[events] ${ev.name}: ${e.message}`));
     created++;
     log(`[events] new event page: ${ev.name}`);
   }
@@ -183,19 +202,33 @@ async function discover(log) {
   return created;
 }
 
-/** Runs from the scan cycle, at most every 6 hours; does nothing without an API key. */
+// Dates on the pages are in the game year, which runs 930 years ahead of ours.
+const GAME_YEAR_OFFSET = 930;
+/** An event that ended more than two weeks ago: nothing new will come, so it is not researched any more. */
+function isOver(page) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(page.endDate || "");
+  if (!m) return false;
+  const end = Date.UTC(Number(m[1]) - GAME_YEAR_OFFSET, Number(m[2]) - 1, Number(m[3]));
+  return Date.now() - end > 14 * 86400 * 1000;
+}
+
+/** Runs from the scan cycle, once every EVENT_AI_INTERVAL_HOURS (default a day); does nothing without an API key. */
 async function refreshEventPages(log = console.log) {
   if (needsKey()) return { skipped: "no ANTHROPIC_API_KEY" };
+  // a changed prompt or model refreshes all pages right away instead of waiting out the interval
+  const version = `${MODEL}:${SYSTEM.length}`;
   const last = getMeta("event_ai_run_at");
-  if (last && Date.now() - new Date(last).getTime() < 6 * 3600 * 1000) return { skipped: "recent" };
+  if (last && getMeta("event_ai_version") === version && Date.now() - new Date(last).getTime() < INTERVAL_HOURS * 3600 * 1000) return { skipped: "recent" };
   setMeta("event_ai_run_at", new Date().toISOString());
+  setMeta("event_ai_version", version);
+  searches = 0;
   const now = new Date();
   let updated = 0;
   for (const p of getEventPages()) {
     // only events that are close (or running); the rest cannot have news worth paying for
     const m = p.recurring?.month;
     const near = !m || ((m - 1 - now.getUTCMonth() + 12) % 12 <= 4) || p.discovered || p.status !== "expected";
-    if (!near) continue;
+    if (!near || isOver(p)) continue;
     try {
       if (await researchOne(p)) updated++;
     } catch (e) {
@@ -203,8 +236,8 @@ async function refreshEventPages(log = console.log) {
     }
   }
   const created = await discover(log).catch((e) => (log(`[events] discovery: ${e.message}`), 0));
-  log(`[events] ${updated} pages updated, ${created} new`);
-  return { updated, created };
+  log(`[events] ${updated} pages updated, ${created} new, ${searches} web searches`);
+  return { updated, created, searches };
 }
 
 module.exports = { getEventPages, getEventPage, refreshEventPages };

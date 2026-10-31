@@ -12,8 +12,11 @@ services:
       # Channel with the live RSI server status (webhook URL, set in the stack's environment)
       DISCORD_STATUS_WEBHOOK_URL: ${DISCORD_STATUS_WEBHOOK_URL:-}
       DISCORD_STATUS_RESET_TOKEN: ${DISCORD_STATUS_RESET_TOKEN:-}
-      # Optional: lets an AI keep the event pages up to date (Claude Haiku, a few cents a month)
+      # Optional: lets an AI keep the event pages up to date once a day, with a web search for news and leaks
+      # (Claude Haiku; mostly the searches cost, about $10 per 1000, so roughly $5-8 a month with the defaults)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EVENT_AI_INTERVAL_HOURS: ${EVENT_AI_INTERVAL_HOURS:-24}
+      EVENT_AI_SEARCHES: ${EVENT_AI_SEARCHES:-3}
       MEMBERS_CALENDAR_URL: ${MEMBERS_CALENDAR_URL:-https://urmtek.org/members/calendar}
     volumes:
       - sc_sales_data:/data
