@@ -51,7 +51,7 @@ Default 24) eine Recherche für jedes Event der nächsten Monate: passende
 Comm-Links und feste Quellen werden gelesen, dazu sucht Claude Haiku im Web
 (`EVENT_AI_SEARCHES` Suchen pro Event, Default 3) nach RSI-Ankündigungen,
 Datamining/Leaks und Community-News. Ergebnis: aktualisierte Seite plus
-eine `news`-Liste (`official` / `leak` / `rumor`, neueste zuerst). Gerüchte
+eine `news`-Liste (`official` nur für RSI-Links, `report` für Presse, `leak`, `rumor`; neueste zuerst; Seiten-Daten immer im Spieljahr = reales Jahr + 930). Gerüchte
 landen nur in den News, nie im Zeitplan. Ein Suchlauf findet außerdem neue
 Events, die noch keine Seite haben. Events, die seit über zwei Wochen vorbei
 sind, werden nicht mehr recherchiert. Ändern sich Prompt oder Modell, läuft

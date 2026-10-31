@@ -148,11 +148,30 @@ async function ask(system, user, { maxTokens = 16000, search = 0 } = {}) {
 const SYSTEM = `You maintain event pages for a Star Citizen organization. You get the current page as JSON and source texts, and you may search the web.
 Search for what is new about this event: RSI announcements (robertsspaceindustries.com Comm-Links, Spectrum, This Week in Star Citizen), patch notes, datamining and leaks (game files, PTU/Evocati builds), and community news (Reddit r/starcitizen, starcitizen.tools, news sites). Prefer the last few weeks.
 Return the updated page as ONE JSON object with exactly these keys: name, status ("official" only if a robertsspaceindustries.com source states the dates, "leaked" if only datamining/community sources, otherwise "expected"), startDate and endDate (YYYY-MM-DD in the game year, or null), location (string or null), summary (2-4 sentences, plain English), highlights (string array), schedule (array of {date, title, detail}), ships (array of {name, maker, date, note}), sales (string or null: what is sold, discounts, how it works), howToJoin (string or null), news (array of {date, title, summary, url, kind}), sources (array of {title, url}, only pages you actually used).
-news: the newest findings first, at most 12. date is the real-world publication date (YYYY-MM-DD), summary one or two sentences, kind is "official" (RSI said it), "leak" (datamined or leaked), or "rumor" (unconfirmed community talk). Keep earlier news items of the page unless a newer source shows they were wrong; then drop them.
+Page dates (startDate, endDate, schedule, ships) are in the game year, which is the real year plus 930: November 13, 2026 is 2956-11-13.
+news: the newest findings first, at most 12. date is the real-world publication date (YYYY-MM-DD), summary one or two sentences, kind is "official" (only for a robertsspaceindustries.com page), "report" (press or community coverage of something RSI announced), "leak" (datamined or leaked), or "rumor" (unconfirmed community talk). Keep earlier news items of the page unless a newer source shows they were wrong; then drop them.
 Leaked facts may go into schedule and ships, with "leaked" in the note or detail. Rumors stay in news only.
 Use ONLY facts stated in the sources, the search results or already on the page. Never invent dates, ships, prices or URLs. Keep unknown fields empty. English only. Answer with the JSON object and nothing else.`;
 
 const needsKey = () => !KEY;
+
+// The AI sometimes writes real-world years on the page, and calls press coverage "official": fix both in code.
+const GAME_YEAR_OFFSET = 930;
+const gameDate = (d) => {
+  const m = /^(\d{4})(-\d{2}-\d{2})$/.exec(d || "");
+  return m && Number(m[1]) < 2900 ? `${Number(m[1]) + GAME_YEAR_OFFSET}${m[2]}` : d ?? null;
+};
+const isRsi = (url) => /^https?:\/\/([a-z0-9-]+\.)*robertsspaceindustries\.com\//i.test(url || "");
+function tidy(out) {
+  return {
+    ...out,
+    startDate: gameDate(out.startDate),
+    endDate: gameDate(out.endDate),
+    schedule: (out.schedule || []).map((s) => ({ ...s, date: gameDate(s.date) })),
+    ships: (out.ships || []).map((s) => ({ ...s, date: gameDate(s.date) })),
+    news: (out.news || []).map((n) => ({ ...n, kind: n.kind === "official" && !isRsi(n.url) ? "report" : ["official", "report", "leak", "rumor"].includes(n.kind) ? n.kind : "rumor" })),
+  };
+}
 
 async function researchOne(page) {
   const kws = [page.name.replace(/\(.*?\)/g, "").trim(), ...(page.name.match(/\((.*?)\)/) ? [page.name.match(/\((.*?)\)/)[1]] : [])].map((s) => s.toLowerCase());
@@ -169,7 +188,7 @@ async function researchOne(page) {
     `Today is ${today}.\n\nCurrent page:\n${JSON.stringify(page)}\n\nSources:\n${texts.length ? texts.map((t) => `--- ${t.url}\n${t.text}`).join("\n\n") : "(none fetched, use the web search)"}`,
     { search: SEARCHES_PER_EVENT },
   );
-  save({ ...page, ...out, slug: page.slug, name: page.name, recurring: page.recurring, majorSale: page.majorSale, discovered: page.discovered }, null);
+  save({ ...page, ...tidy(out), slug: page.slug, name: page.name, recurring: page.recurring, majorSale: page.majorSale, discovered: page.discovered }, null);
   return true;
 }
 
@@ -190,8 +209,7 @@ Return ONE JSON object {"events":[{"name":"<short official event name>","url":"<
     if (!ev.name || !/^https?:\/\//.test(ev.url || "")) continue;
     const slug = slugify(ev.name);
     if (!slug || row(slug) || getEventPages().some((p) => p.slug === slug)) continue;
-    const isRsi = /robertsspaceindustries\.com/.test(ev.url);
-    const page = { slug, name: ev.name, status: isRsi ? "official" : "leaked", recurring: null, majorSale: false, summary: "", highlights: [], schedule: [], ships: [], news: [], sources: [{ title: ev.name, url: ev.url }], discovered: true };
+    const page = { slug, name: ev.name, status: isRsi(ev.url) ? "official" : "leaked", recurring: null, majorSale: false, summary: "", highlights: [], schedule: [], ships: [], news: [], sources: [{ title: ev.name, url: ev.url }], discovered: true };
     save(page, null);
     await researchOne(page).catch((e) => log(`[events] ${ev.name}: ${e.message}`));
     created++;
@@ -202,8 +220,6 @@ Return ONE JSON object {"events":[{"name":"<short official event name>","url":"<
   return created;
 }
 
-// Dates on the pages are in the game year, which runs 930 years ahead of ours.
-const GAME_YEAR_OFFSET = 930;
 /** An event that ended more than two weeks ago: nothing new will come, so it is not researched any more. */
 function isOver(page) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(page.endDate || "");
