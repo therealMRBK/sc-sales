@@ -222,17 +222,21 @@ Return ONE JSON object {"events":[{"name":"<short official event name>","url":"<
 
 /** An event that ended more than two weeks ago: nothing new will come, so it is not researched any more. */
 function isOver(page) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(page.endDate || "");
+  // gameDate: pages saved before the year fix may still carry a real-world year
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(gameDate(page.endDate) || "");
   if (!m) return false;
   const end = Date.UTC(Number(m[1]) - GAME_YEAR_OFFSET, Number(m[2]) - 1, Number(m[3]));
   return Date.now() - end > 14 * 86400 * 1000;
 }
 
+// Raise to refresh all pages right after a deploy when the processing changed but the prompt did not.
+const CODE_REVISION = 2;
+
 /** Runs from the scan cycle, once every EVENT_AI_INTERVAL_HOURS (default a day); does nothing without an API key. */
 async function refreshEventPages(log = console.log) {
   if (needsKey()) return { skipped: "no ANTHROPIC_API_KEY" };
   // a changed prompt or model refreshes all pages right away instead of waiting out the interval
-  const version = `${MODEL}:${SYSTEM.length}`;
+  const version = `${MODEL}:${SYSTEM.length}:${CODE_REVISION}`;
   const last = getMeta("event_ai_run_at");
   if (last && getMeta("event_ai_version") === version && Date.now() - new Date(last).getTime() < INTERVAL_HOURS * 3600 * 1000) return { skipped: "recent" };
   setMeta("event_ai_run_at", new Date().toISOString());
