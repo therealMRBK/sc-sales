@@ -91,7 +91,7 @@ module.exports = [
     name: "Intergalactic Aerospace Expo (IAE)",
     month: 11,
     note: "Der größte Sale des Jahres, ca. zwei Wochen. Nahezu der komplette Schiffskatalog ist verfügbar, inkl. sonst nicht kaufbarer Konzeptschiffe.",
-    noteEn: "The biggest sale of the year, roughly two weeks. Nearly the entire ship catalog is available, incl. otherwise unavailable concept ships. Leaked from the Alpha 4.10.2 files (not official yet): Nov 13-30 2956 at Tobin Expo Hall, New Babbage. Debuts: Constellation Mk V Andromeda and Skylark (RSI, Nov 13), HM6 Auxelia (Anvil, Nov 15), Marauder (Drake, Nov 17), MFC (Greycat, Nov 18), Hyun (GATAC, Nov 21); RSI Galaxy and Anvil Liberator also shown.",
+    noteEn: "The biggest sale of the year, roughly two weeks. Nearly the entire ship catalog is available, incl. otherwise unavailable concept ships. IAE 2956 runs Nov 13 16:00 UTC to Nov 27 20:00 UTC at Tobin Expo Hall, New Babbage (RSI; the earlier leak said Nov 30). Debuts: Constellation Mk V Andromeda and Skylark (RSI, Nov 13), HM6 Auxelia (Anvil, Nov 15), Marauder (Drake, Nov 17), MFC (Greycat, Nov 18), Hyun (GATAC, Nov 21); RSI Galaxy and Anvil Liberator also shown.",
     majorSale: true,
   },
   {

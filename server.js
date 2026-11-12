@@ -21,6 +21,7 @@ const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_
 const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
 const { startStatusMonitor } = require("./status-monitor");
+const { startIaeTimer } = require("./iae-timer");
 const { getEventPages, getEventPage, refreshEventPages } = require("./event-pages");
 
 const PORT = process.env.PORT || 3000;
@@ -396,6 +397,7 @@ app.listen(PORT, () => {
   console.log(`sc-sales läuft auf Port ${PORT}`);
   scheduleScans();
   startStatusMonitor();
+  startIaeTimer();
 });
 
 // Ein einziger, selbst-nachplanender Zyklus statt mehrerer setInterval --

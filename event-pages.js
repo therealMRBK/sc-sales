@@ -27,17 +27,17 @@ const SEED = {
   "intergalactic-aerospace-expo": {
     status: "leaked",
     startDate: "2956-11-13",
-    endDate: "2956-11-30",
+    endDate: "2956-11-27",
     location: "Tobin Expo Hall, New Babbage (MicroTech)",
     summary:
-      "The biggest ship event of the year: a free-fly period in which nearly every ship and vehicle can be flown for free, plus the largest pledge sale. The dates below were found in the Alpha 4.10.2 game files and are not confirmed by RSI yet.",
+      "The biggest ship event of the year: a free-fly period in which nearly every ship and vehicle can be flown for free, plus the largest pledge sale. The expo runs from Nov 13, 16:00 UTC to Nov 27, 20:00 UTC (RSI); the ship debut dates below come from the Alpha 4.10.2 game files.",
     schedule: [
       { date: "2956-11-13", title: "Expo opens", detail: "Constellation Mk V Andromeda and Skylark (both RSI) debut." },
       { date: "2956-11-15", title: "Anvil HM6 Auxelia debuts" },
       { date: "2956-11-17", title: "Drake Marauder debuts" },
       { date: "2956-11-18", title: "Greycat MFC debuts" },
       { date: "2956-11-21", title: "GATAC Hyun debuts" },
-      { date: "2956-11-30", title: "Expo ends" },
+      { date: "2956-11-27", title: "Expo ends (20:00 UTC)" },
     ],
     ships: [
       { name: "Constellation Mk V Andromeda", maker: "RSI", date: "2956-11-13" },

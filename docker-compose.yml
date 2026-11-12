@@ -17,6 +17,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EVENT_AI_INTERVAL_HOURS: ${EVENT_AI_INTERVAL_HOURS:-24}
       EVENT_AI_SEARCHES: ${EVENT_AI_SEARCHES:-3}
+      # IAE countdown in the calendar channel; change only if RSI moves the times (ISO, UTC)
+      IAE_START_UTC: ${IAE_START_UTC:-}
+      IAE_END_UTC: ${IAE_END_UTC:-}
       MEMBERS_CALENDAR_URL: ${MEMBERS_CALENDAR_URL:-https://urmtek.org/members/calendar}
     volumes:
       - sc_sales_data:/data
