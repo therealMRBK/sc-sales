@@ -379,6 +379,22 @@ app.get("/api/items/:id/history", (req, res) => {
   res.json({ ...result, events, stats, fxRate: rate });
 });
 
+// Star-Hangar listings below their estimated melt value. The hangar-melt scanner
+// (another host) pushes its result here, the members area reads it.
+app.post("/api/hangar-melt", (req, res) => {
+  const token = (process.env.HANGAR_MELT_TOKEN || "").trim();
+  if (!token || req.get("x-ingest-token") !== token) return res.status(403).json({ error: "forbidden" });
+  if (!req.body || !Array.isArray(req.body.candidates)) return res.status(400).json({ error: "candidates missing" });
+  setMeta("hangar_melt", JSON.stringify({ ...req.body, receivedAt: new Date().toISOString() }));
+  res.json({ ok: true });
+});
+
+app.get("/api/hangar-melt", (req, res) => {
+  const raw = getMeta("hangar_melt");
+  if (!raw) return res.json({ updatedAt: null, candidates: [], unverified: [] });
+  res.type("json").send(raw);
+});
+
 app.get("/api/stats", (req, res) => {
   const fx = getExchangeRate();
   const rate = fx ? fx.usdToEur : null;
