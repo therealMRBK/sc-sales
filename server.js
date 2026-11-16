@@ -2,6 +2,7 @@ const path = require("path");
 const express = require("express");
 const {
   getItemsWithSaleInfo,
+  isExtra,
   getMeta,
   setMeta,
   getRecentAnnouncements,
@@ -17,7 +18,7 @@ const {
 } = require("./db");
 const { postNewSales } = require("./discord");
 const { updateCalendarPost } = require("./discord-calendar");
-const { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
+const { runScan, scanExtras, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE } = require("./scanner");
 const { hashPassword, verifyPassword, issueSession, getUserFromToken, revokeSession, isValidEmail, checkRateLimit, createUser, getUserByEmail } = require("./auth");
 const RECURRING_EVENTS = require("./events");
 const { startStatusMonitor } = require("./status-monitor");
@@ -188,7 +189,7 @@ app.delete("/api/hangar/:id", requireAuth, (req, res) => {
 // grundsaetzlich nicht sehen kann.
 // -------------------------------------------------------------------------
 app.get("/api/upgrade-cost", (req, res) => {
-  const items = getItemsWithSaleInfo();
+  const items = getItemsWithSaleInfo().filter((i) => !isExtra(i));
   const from = items.find((i) => i.id === req.query.from);
   const to = items.find((i) => i.id === req.query.to);
   if (!from || !to) return res.status(404).json({ error: "unknown item(s)" });
@@ -215,7 +216,7 @@ app.get("/api/upgrade-cost", (req, res) => {
 // Store-Credit-Preisunterschied, keine Mehrfach-Hop-Kette.
 app.get("/api/hangar/upgrade-suggestions", requireAuth, (req, res) => {
   const hangarItems = getHangarItems(req.user.id).filter((h) => h.item_id && h.purchase_price_usd != null);
-  const items = getItemsWithSaleInfo();
+  const items = getItemsWithSaleInfo().filter((i) => !isExtra(i));
   const byId = new Map(items.map((i) => [i.id, i]));
 
   const suggestions = [];
@@ -294,7 +295,7 @@ app.get("/api/status", (req, res) => {
 app.get("/api/items", (req, res) => {
   const fx = getExchangeRate();
   const rate = fx ? fx.usdToEur : null;
-  const items = getItemsWithSaleInfo().map((item) =>
+  const items = getItemsWithSaleInfo().filter((i) => !isExtra(i)).map((item) =>
     withGermanPricing(item, rate, [
       ["price", "priceEurInclVat"],
       ["baselinePrice", "baselinePriceEurInclVat"],
@@ -409,6 +410,7 @@ app.listen(PORT, () => {
 // Zyklus mal länger als das Intervall dauert.
 async function runCycle() {
   await runScan().catch((err) => console.error("[scan] fehlgeschlagen:", err));
+  await scanExtras().catch((err) => console.error("[extras] fehlgeschlagen:", err));
   {
     const fx = getExchangeRate();
     await postNewSales(fx ? fx.usdToEur : null).catch((err) => console.error("[discord] fehlgeschlagen:", err));

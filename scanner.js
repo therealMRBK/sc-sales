@@ -188,7 +188,8 @@ async function fetchItemDetail(item) {
     availability = offer.availability ? offer.availability.replace("https://schema.org/", "") : null;
   }
 
-  return { price: currentPrice, availability, currentPrice, referencePrice, description: product.description || null };
+  const image = Array.isArray(product.image) ? product.image[0] : product.image;
+  return { price: currentPrice, availability, currentPrice, referencePrice, description: product.description || null, name: product.name || null, image: typeof image === "string" ? image : null };
 }
 
 // Lädt ein Bild einmalig auf die lokale Platte -- kein Re-Download, wenn die
@@ -261,6 +262,79 @@ async function runScan(log = console.log) {
   setMeta("last_scan_failed", failed);
   const seconds = Math.round((Date.now() - startedAt) / 1000);
   log(`[scan] Fertig in ${seconds}s. ok=${ok} failed=${failed}`);
+}
+
+// Other things in the pledge store besides ships: gear, packs and add-ons. RSI lists their pages in its public
+// store sitemap, and each page carries price and availability in the same product data as a ship page.
+// Paints and ship modules are mostly missing from that sitemap, so they are not covered.
+const EXTRA_CATEGORIES = { Gear: "Gear", Packs: "Packs", "Add-Ons": "Add-Ons" };
+const STORE_SITEMAP = "https://robertsspaceindustries.com/sitemaps/sitemap-store.xml";
+
+/** The extras in a store sitemap: one entry per page, whatever language prefix its link has. */
+function extractExtraItems(xml) {
+  const items = new Map();
+  for (const [, loc] of xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) {
+    const m = loc.match(/^https:\/\/robertsspaceindustries\.com\/(?:[a-z]{2}\/)?pledge\/([A-Za-z-]+)\/([A-Za-z0-9._-]+)\/?$/);
+    if (!m || !EXTRA_CATEGORIES[m[1]]) continue;
+    const id = `extra:${m[1].toLowerCase()}:${m[2].toLowerCase()}`;
+    if (!items.has(id)) items.set(id, { id, url: `https://robertsspaceindustries.com/pledge/${m[1]}/${m[2]}`, category: EXTRA_CATEGORIES[m[1]], slug: m[2] });
+  }
+  return [...items.values()];
+}
+
+/** "Gear - RSI Gear Pack" -> "RSI Gear Pack"; without a name on the page, the slug with spaces. */
+function extraName(pageName, item) {
+  const name = (pageName || "").replace(new RegExp(`^${item.category}\\s*-\\s*`, "i"), "").trim();
+  return name || item.slug.replace(/-/g, " ");
+}
+
+async function scanExtras(log = console.log) {
+  const startedAt = Date.now();
+  const res = await fetch(STORE_SITEMAP, { headers: { "User-Agent": USER_AGENT } });
+  if (!res.ok) throw new Error(`store sitemap failed: HTTP ${res.status}`);
+  const items = extractExtraItems(await res.text());
+  let ok = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const item of items) {
+    try {
+      await sleep(REQUEST_DELAY_MS);
+      // some add-on pages carry no offer or no product data at all (free downloads, account services): nothing to track
+      const detail = await fetchItemDetail(item).catch((err) => {
+        if (/no product data/.test(err.message)) return { price: null };
+        throw err;
+      });
+      if (detail.price == null) {
+        skipped++;
+        continue;
+      }
+      let image = null;
+      if (detail.image) {
+        const file = path.join(MEDIA_DIR, "extras", `${item.id.replace(/[^a-z0-9._-]/g, "_")}.${extForUrl(detail.image)}`);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        await downloadImageIfMissing(detail.image, file);
+        image = `/media/extras/${path.basename(file)}`;
+      }
+      upsertItem({
+        id: item.id,
+        name: extraName(detail.name, item),
+        url: item.url,
+        manufacturer: null,
+        image,
+        classification: `extra:${item.category.toLowerCase()}`,
+        description: detail.description,
+        focus: item.category,
+      });
+      addSnapshot(item.id, detail.price, detail.availability, detail.currentPrice, detail.referencePrice);
+      ok++;
+    } catch (err) {
+      failed++;
+      log(`[extras] ${item.id}: ${err.message}`);
+    }
+  }
+  setMeta("last_extras_scan_at", new Date().toISOString());
+  log(`[extras] ${items.length} pages in ${Math.round((Date.now() - startedAt) / 1000)}s. ok=${ok} without price=${skipped} failed=${failed}`);
+  return { total: items.length, ok, skipped, failed };
 }
 
 function extractCommLinkArticles(html) {
@@ -366,4 +440,4 @@ async function scanExchangeRate(log = console.log) {
   return { eur, gbp };
 }
 
-module.exports = { runScan, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE };
+module.exports = { runScan, scanExtras, extractExtraItems, extraName, scanCommLink, scanShipsInDevelopment, scanExchangeRate, GERMAN_VAT_RATE };

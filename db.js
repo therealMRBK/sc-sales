@@ -448,8 +448,11 @@ function getItemHistory(itemId) {
 
 // Aggregierte Kennzahlen über den gesamten getrackten Katalog, fürs
 // Statistik-Panel im Frontend.
+/** Gear, packs and add-ons of the pledge store (scanExtras), as opposed to ships. */
+const isExtra = (item) => String(item.classification || "").startsWith("extra:");
+
 function getStats() {
-  const items = getItemsWithSaleInfo().filter((i) => i.price != null);
+  const items = getItemsWithSaleInfo().filter((i) => i.price != null && !isExtra(i));
   const totalChanges = db.prepare("SELECT COUNT(*) AS c FROM snapshots").get().c;
   const totalAnnouncements = db.prepare("SELECT COUNT(*) AS c FROM announcements").get().c;
 
@@ -615,6 +618,7 @@ function getHangarItems(userId) {
 }
 
 module.exports = {
+  isExtra,
   db,
   DATA_DIR,
   MEDIA_DIR,

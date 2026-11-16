@@ -24,7 +24,25 @@ function readPosted() {
   }
 }
 
+// New in the store: an item first seen after the bot started announcing new items (the baseline keeps the first
+// import of a whole category quiet) and not older than a week. Each one is announced once, remembered by id.
+const NEW_ITEM_DAYS = 7;
+const NEW_ITEM_BULK = 15;
+function readAnnouncedNew() {
+  try {
+    return new Set(JSON.parse(getMeta("discord_new_announced") || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+function isJustAdded(item, since, announced, now = Date.now()) {
+  if (!since || !item.first_seen_at || announced.has(item.id)) return false;
+  const seen = new Date(item.first_seen_at).getTime();
+  return seen > new Date(since).getTime() && now - seen <= NEW_ITEM_DAYS * 86400000;
+}
+
 function keyOf(item) {
+  if (item.justAdded && !item.onSale && !item.newlyAvailable) return `v2new:${item.id}`;
   // Preis, Art und ob neu verfügbar: ändert sich eines davon, ist es eine neue Meldung
   return `v2:${item.id}:${item.price}:${item.saleType || "-"}:${item.newlyAvailable ? "new" : "-"}`;
 }
@@ -39,8 +57,13 @@ function embedOf(item, rate) {
     if (item.saleType === "listed_discount") lines.push("RSI lists two prices (discounted vs. store credit).");
     if (item.saleType === "price_drop") lines.push("The price dropped below its usual level.");
   }
-  if (item.newlyAvailable) lines.push("Can be bought on its own again.");
-  const title = `${item.name}${item.discountPct ? ` -${item.discountPct}%` : item.newlyAvailable ? " is available again" : ""}`;
+  if (item.justAdded) {
+    lines.unshift("New in the pledge store.");
+    if (!item.onSale && item.price != null) lines.push(`**${usd(item.price)}**${eur(item.price, rate) ? ` · ≈ ${eur(item.price, rate)} incl. VAT` : ""}`);
+  }
+  const extra = String(item.classification || "").startsWith("extra:");
+  if (item.newlyAvailable) lines.push(extra ? "Back in stock." : "Can be bought on its own again.");
+  const title = `${item.name}${item.discountPct ? ` -${item.discountPct}%` : item.newlyAvailable ? " is available again" : item.justAdded ? " is new in the store" : ""}`;
   const embed = {
     title: title.slice(0, 250),
     url: item.url,
@@ -75,11 +98,27 @@ async function post(item, rate) {
 
 async function postNewSales(rate, log = console.log) {
   if (!WEBHOOK) return { posted: 0, skipped: "kein Webhook gesetzt" };
-  const items = getItemsWithSaleInfo().filter((i) => (i.onSale || i.newlyAvailable) && i.url);
+  // the first run only sets the baseline: what is in the store now is not "new"
+  let since = getMeta("discord_new_since");
+  if (!since) setMeta("discord_new_since", new Date().toISOString());
+  const announced = readAnnouncedNew();
+  const items = getItemsWithSaleInfo()
+    .map((i) => ({ ...i, justAdded: isJustAdded(i, since, announced) }))
+    .filter((i) => (i.onSale || i.newlyAvailable || i.justAdded) && i.url);
+  // a whole category arriving at once (a first import after a failed scan) is not news: remember it, post nothing
+  const fresh = items.filter((i) => i.justAdded);
+  if (fresh.length > NEW_ITEM_BULK) {
+    for (const i of fresh) {
+      announced.add(i.id);
+      i.justAdded = false;
+    }
+    log(`[discord] ${fresh.length} new items at once: taken as an import, not announced`);
+  }
+  const candidates = items.filter((i) => i.onSale || i.newlyAvailable || i.justAdded);
   const old = readPosted();
   const next = {};
   const todo = [];
-  for (const item of items) {
+  for (const item of candidates) {
     const k = keyOf(item);
     if (old[k]) next[k] = old[k];
     else todo.push({ item, k });
@@ -89,6 +128,7 @@ async function postNewSales(rate, log = console.log) {
     try {
       await post(item, rate);
       next[k] = new Date().toISOString();
+      if (item.justAdded) announced.add(item.id);
       posted++;
       log(`[discord] gepostet: ${item.name}`);
       await sleep(1200);
@@ -98,7 +138,9 @@ async function postNewSales(rate, log = console.log) {
   }
   // Der Rest kommt beim nächsten Lauf. Was nicht mehr im Sale ist, fällt aus der Liste und kann später neu gemeldet werden.
   setMeta("discord_posted", JSON.stringify(next));
+  setMeta("discord_new_announced", JSON.stringify([...announced]));
   return { posted, pending: Math.max(0, todo.length - posted) };
 }
 
-module.exports = { postNewSales };
+module.exports = {
+  isJustAdded, postNewSales };
