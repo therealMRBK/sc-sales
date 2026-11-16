@@ -139,7 +139,8 @@ async function fetchItemDetail(item) {
   if (!res.ok) throw new Error(`detail fetch failed for ${item.id}: HTTP ${res.status}`);
   const html = await res.text();
 
-  const ldBlocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+  // RSI adds attributes to the tag (id, nonce) since 2026-10-21, so match the type wherever it stands
+  const ldBlocks = [...html.matchAll(/<script\b[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)];
   let product = null;
   for (const [, block] of ldBlocks) {
     try {
@@ -152,7 +153,9 @@ async function fetchItemDetail(item) {
       // ignorieren: nicht jedes ld+json-Blob ist gültiges/erwartetes JSON
     }
   }
-  if (!product) return { price: null, availability: null, currentPrice: null, referencePrice: null, description: null };
+  // No product data is a failed read, not "no price": storing nulls here silently wiped prices and availability
+  // for every item from 2026-10-21 on, so no sale was ever detected again.
+  if (!product) throw new Error(`no product data on the page of ${item.id}`);
 
   const offer = product.offers;
   let currentPrice = null;
